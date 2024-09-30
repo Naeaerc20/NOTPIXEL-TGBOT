@@ -77,31 +77,32 @@ async function loginWithPhoneNumber(account) {
 
     console.log(`Logging in with phone number: ${phone_number}`);
 
-    await client.start({
-        phoneNumber: async () => phone_number,
-        phoneCode: async () => {
-            // Here you should implement a way to automatically obtain the verification code.
-            // For full automation, you need a method to receive the code without manual intervention.
-            // If you don't have one, this step cannot be fully automated.
-            throw new Error("Cannot automate the entry of the verification code.");
-        },
-        password: async () => {
-            // Similarly, if a password is required, you need to automate its retrieval.
-            throw new Error("Cannot automate the entry of the password.");
-        },
-        onError: (error) => console.error("Error:", error),
-    }).catch(error => {
+    try {
+        await client.start({
+            phoneNumber: async () => phone_number,
+            phoneCode: async () => {
+                // Implement a way to automatically obtain the verification code.
+                // This requires external services or manual intervention.
+                throw new Error("Cannot automate the entry of the verification code.");
+            },
+            password: async () => {
+                // Implement a way to automatically retrieve the password if required.
+                throw new Error("Cannot automate the entry of the password.");
+            },
+            onError: (error) => console.error("Error:", error),
+        });
+
+        console.log('Successfully logged in');
+
+        const sessionString = client.session.save();
+        const sessionFile = path.join(sessionsFolder, `${id}_session`);
+
+        fs.writeFileSync(sessionFile, sessionString, 'utf8');
+        console.log(`Session saved in ${sessionFile}`);
+        accounts.set(phone_number, client);
+    } catch (error) {
         console.error(`Error logging in with ${phone_number}:`, error.message);
-    });
-
-    console.log('Successfully logged in');
-
-    const sessionString = client.session.save();
-    const sessionFile = path.join(sessionsFolder, `${id}_session`);
-
-    fs.writeFileSync(sessionFile, sessionString, 'utf8');
-    console.log(`Session saved in ${sessionFile}`);
-    accounts.set(phone_number, client);
+    }
 }
 
 // Function to log in with a session file or phone number
@@ -138,6 +139,8 @@ async function loginWithSessionFile(account) {
 async function loadAllAccounts() {
     for (const account of telegramAPIs) {
         await loginWithSessionFile(account);
+        // Adding a delay to prevent rapid connections
+        await new Promise(res => setTimeout(res, 500));
     }
 }
 
@@ -200,6 +203,9 @@ async function updateWebAppData() {
         } else {
             accountsWebAppData.push(null);
         }
+
+        // Adding a delay to prevent rapid requests
+        await new Promise(res => setTimeout(res, 500));
     }
 
     fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
@@ -233,24 +239,53 @@ async function performActionWithRetry(actionFunction, dataIndex) {
     try {
         await actionFunction();
     } catch (error) {
-        if (error.response && [401, 403].includes(error.response.status)) {
-            console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Updating...`);
-            const accountEntry = telegramAPIs[dataIndex];
-            await loginWithSessionFile(accountEntry);
-            const client = accounts.get(accountEntry.phone_number);
-            const newWebAppData = await requestWebViewForClient(client, accountEntry.phone_number);
-            if (newWebAppData) {
-                accountsWebAppData[dataIndex] = newWebAppData;
-                fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
-                console.log('accounts.json updated with new tgWebAppData');
-                // Retry the action
-                await actionFunction();
-            } else {
-                console.error(`Could not update tgWebAppData for account ID ${accountEntry.id}`);
-            }
+        console.error(`Error encountered: ${error.message}`.red);
+
+        // Check if error has response and status
+        const status = error.response ? error.response.status : null;
+
+        if ([401, 403].includes(status)) {
+            console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Renewing...`.yellow);
+            await renewQueryId(dataIndex);
         } else {
-            throw error;
+            console.error(`Unhandled error: ${error.message}`.red);
+            // Optionally, you can decide to throw the error or continue
         }
+    }
+}
+
+// Function to renew the query_id for a specific account
+async function renewQueryId(dataIndex) {
+    const accountEntry = telegramAPIs[dataIndex];
+    const { id, phone_number } = accountEntry;
+
+    console.log(`Renewing query_id for account ID: ${id} (${phone_number})`.yellow);
+
+    try {
+        // Re-login with the session file
+        await loginWithSessionFile(accountEntry);
+
+        const client = accounts.get(phone_number);
+        if (!client) {
+            throw new Error(`Client not found after re-login for account ID: ${id}`);
+        }
+
+        // Request new tgWebAppData
+        const newWebAppData = await requestWebViewForClient(client, phone_number);
+        if (newWebAppData) {
+            // Update the in-memory variable and accounts.json
+            accountsWebAppData[dataIndex] = newWebAppData;
+            fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
+            console.log('accounts.json updated with new tgWebAppData'.green);
+
+            // Optionally, re-execute the failed action here if needed
+            // For example, you might want to call the actionFunction again
+            // But in this implementation, performActionWithRetry will not automatically retry
+        } else {
+            throw new Error(`Failed to obtain new tgWebAppData for account ID: ${id}`);
+        }
+    } catch (error) {
+        console.error(`Failed to renew query_id for account ID ${id}: ${error.message}`.red);
     }
 }
 
@@ -294,6 +329,7 @@ const paintTheWorld = async () => {
                         }
                     } catch (error) {
                         console.log(`⛔️ ${firstName} could not paint pixel ${pixelId}.`.red);
+                        throw error; // Rethrow to be caught by performActionWithRetry
                     }
 
                     // Wait 500ms between repaint attempts
@@ -302,6 +338,7 @@ const paintTheWorld = async () => {
 
             } catch (error) {
                 console.log(`⛔️ Error processing account ${i + 1}.`.red);
+                throw error; // Rethrow to be caught by performActionWithRetry
             }
         };
 
@@ -333,3 +370,4 @@ const main = async () => {
 (async () => {
     main();
 })();
+

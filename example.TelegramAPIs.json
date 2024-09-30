@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "api_id": "YOUR_API_ID_1",
+    "api_hash": "YOUR_API_HASH_1",
+    "phone_number": "+12345678901"
+  },
+  {
+    "id": 2,
+    "api_id": "YOUR_API_ID_2",
+    "api_hash": "YOUR_API_HASH_2",
+    "phone_number": "+12345678902"
+  },
+  {
+    "id": 3,
+    "api_id": "YOUR_API_ID_3",
+    "api_hash": "YOUR_API_HASH_3",
+    "phone_number": "+12345678903"
+  },
+  {
+    "id": 4,
+    "api_id": "YOUR_API_ID_4",
+    "api_hash": "YOUR_API_HASH_4",
+    "phone_number": "+12345678904"
+  },
+  {
+    "id": 5,
+    "api_id": "YOUR_API_ID_5",
+    "api_hash": "YOUR_API_HASH_5",
+    "phone_number": "+12345678905"
+  },
+  {
+    "id": 6,
+    "api_id": "YOUR_API_ID_6",
+    "api_hash": "YOUR_API_HASH_6",
+    "phone_number": "+12345678906"
+  },
+  {
+    "id": 7,
+    "api_id": "YOUR_API_ID_7",
+    "api_hash": "YOUR_API_HASH_7",
+    "phone_number": "+12345678907"
+  },
+  {
+    "id": 8,
+    "api_id": "YOUR_API_ID_8",
+    "api_hash": "YOUR_API_HASH_8",
+    "phone_number": "+12345678908"
+  },
+  {
+    "id": 9,
+    "api_id": "YOUR_API_ID_9",
+    "api_hash": "YOUR_API_HASH_9",
+    "phone_number": "+12345678909"
+  },
+  {
+    "id": 10,
+    "api_id": "YOUR_API_ID_10",
+    "api_hash": "YOUR_API_HASH_10",
+    "phone_number": "+12345678910"
+  }
+]

@@ -22,7 +22,12 @@ const {
     claimMiningRewards,
     improvePaintReward,
     improveRechargeSpeed,
-    improveEnergyLimit
+    improveEnergyLimit,
+    getSquadRatingsBronze,
+    checkLeagueBonusSilver,
+    checkLeagueBonusGold,
+    checkLeagueBonusPlatinum,
+    checkPaint20Pixels
 } = require('./scripts/apis');
 
 // Directories and file paths
@@ -343,7 +348,7 @@ const paintTheWorld = async () => {
                     return;
                 }
 
-                console.log(`\n🎨 Painting with ${firstName} - Please wait while creating art.`.yellow);
+                console.log(`\n🎨 Painting with ${firstName} - Please wait while creating art...`.yellow);
 
                 for (let j = 0; j < charges; j++) {
                     const newColor = getRandomColor();
@@ -353,7 +358,7 @@ const paintTheWorld = async () => {
                         const repaintResponse = await startRepaint(tgWebAppData, newColor, pixelId);
                         if (repaintResponse.balance !== undefined) {
                             const balance = parseFloat(repaintResponse.balance).toFixed(2);
-                            console.log(`✅ ${firstName} - Painted pixel ${pixelId} with color ${newColor} - Your points are now ${balance}`.green);
+                            console.log(`✅ ${firstName} - Painted pixel ${pixelId} with color ${newColor} - Your points are now ${balance}.`.green);
                         } else {
                             console.log(`⛔️ ${firstName} could not paint pixel ${pixelId}.`.red);
                         }
@@ -393,7 +398,7 @@ const claimRewards = async () => {
                 const claimResponse = await claimMiningRewards(tgWebAppData);
                 const claimed = claimResponse.claimed;
 
-                console.log(`\n🎉 ${firstName} has successfully claimed ${claimed} in Mining Rewards`.magenta);
+                console.log(`\n🎉 ${firstName} has successfully claimed ${claimed} in Mining Rewards.`.magenta);
             } catch (error) {
                 console.log(`⛔️ Could not claim rewards for account ID ${i + 1}.`.red);
             }
@@ -447,14 +452,14 @@ const improveAccount = async () => {
                 const userInfo = await getUserInfo(tgWebAppData);
                 const firstName = userInfo.firstName.split(' ')[0];
 
-                console.log(`\n⚙️  Improving ${improvementFunction} for ${firstName}`.blue);
+                console.log(`\n⚙️  Improving ${improvementFunction} for ${firstName}.`.blue);
 
                 let improveResponse;
                 switch (improvementFunction) {
                     case 'Paint Reward':
                         improveResponse = await improvePaintReward(tgWebAppData);
                         if (improveResponse.paintReward === true) {
-                            console.log(`✅ ${firstName} has successfully improved ${improvementFunction}`.green);
+                            console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
                             console.log(`⛔️ ${firstName} cannot improve this feature now. Acquire more points and try again.`.red);
                         }
@@ -462,7 +467,7 @@ const improveAccount = async () => {
                     case 'Recharge Speed':
                         improveResponse = await improveRechargeSpeed(tgWebAppData);
                         if (improveResponse.reChargeSpeed === true) {
-                            console.log(`✅ ${firstName} has successfully improved ${improvementFunction}`.green);
+                            console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
                             console.log(`⛔️ ${firstName} cannot improve this feature now. Acquire more points and try again.`.red);
                         }
@@ -470,7 +475,7 @@ const improveAccount = async () => {
                     case 'Energy Limit':
                         improveResponse = await improveEnergyLimit(tgWebAppData);
                         if (improveResponse.energyLimit === true) {
-                            console.log(`✅ ${firstName} has successfully improved ${improvementFunction}`.green);
+                            console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
                             console.log(`⛔️ ${firstName} cannot improve this feature now. Acquire more points and try again.`.red);
                         }
@@ -491,6 +496,96 @@ const improveAccount = async () => {
     }
 };
 
+// Option 4: Claim Rewards for Leagues
+const claimLeagueRewards = async () => {
+    console.log('\n🏆 '.yellow + "Claiming League Rewards for all Users".yellow);
+
+    for (let i = 0; i < accountsWebAppData.length; i++) {
+        let tgWebAppData = accountsWebAppData[i];
+        if (!tgWebAppData) {
+            console.log(`\n⛔️ Account ID ${i + 1} does not have valid tgWebAppData.`.red);
+            continue;
+        }
+
+        const actionFunction = async () => {
+            try {
+                const userInfo = await getUserInfo(tgWebAppData);
+                const firstName = userInfo.firstName.split(' ')[0];
+                const league = userInfo.league.toLowerCase(); // Assuming leagues are 'bronze', 'silver', 'gold', 'platinum'
+
+                let rewardsClaimed = false;
+
+                // Function to claim reward for a specific league
+                const claimLeague = async (leagueName, claimFunction) => {
+                    try {
+                        const response = await claimFunction(tgWebAppData);
+                        if (response[Object.keys(response)[0]] === true) {
+                            // Get updated balance
+                            const updatedUserInfo = await getUserInfo(tgWebAppData);
+                            const newPoints = updatedUserInfo.balance;
+
+                            console.log(`✅ ${firstName} has claimed points for reaching the ${leagueName} league - Your points are now: ${newPoints}`.green);
+                            rewardsClaimed = true;
+                        }
+                    } catch (error) {
+                        if (error.response && [400].includes(error.response.status)) {
+                            console.log(`❌ ${firstName} had a problem while claiming rewards for the ${leagueName} league. Please try again later.`.red);
+                        } else {
+                            console.log(`❌ ${firstName} had a problem while claiming rewards for the ${leagueName} league. Please try again later.`.red);
+                        }
+                    }
+                };
+
+                // Claim rewards based on the user's league
+                if (league === 'bronze' || league === 'silver' || league === 'gold' || league === 'platinum') {
+                    await claimLeague('Bronze', getSquadRatingsBronze);
+                }
+
+                if (league === 'silver' || league === 'gold' || league === 'platinum') {
+                    await claimLeague('Silver', checkLeagueBonusSilver);
+                }
+
+                if (league === 'gold' || league === 'platinum') {
+                    await claimLeague('Gold', checkLeagueBonusGold);
+                }
+
+                if (league === 'platinum') {
+                    await claimLeague('Platinum', checkLeagueBonusPlatinum);
+                }
+
+                // Claim points for painting 20 pixels
+                try {
+                    const paintResponse = await checkPaint20Pixels(tgWebAppData);
+                    if (paintResponse.paint20pixels === true) {
+                        const updatedUserInfo = await getUserInfo(tgWebAppData);
+                        const newPoints = updatedUserInfo.balance;
+                        console.log(`✅ ${firstName} has claimed points for painting the world 20 times - Your points are now: ${newPoints}`.green);
+                        rewardsClaimed = true;
+                    }
+                } catch (error) {
+                    if (error.response && [400].includes(error.response.status)) {
+                        console.log(`❌ ${firstName} had a problem while claiming points for painting the world 20 times. Please try again later.`.red);
+                    } else {
+                        console.log(`❌ ${firstName} had a problem while claiming points for painting the world 20 times. Please try again later.`.red);
+                    }
+                }
+
+                if (!rewardsClaimed) {
+                    console.log(`ℹ️ ${firstName} has no pending league rewards to claim.`.cyan);
+                }
+
+            } catch (error) {
+                console.log(`❌ Error processing account ${i + 1}.`.red);
+            }
+
+            // Wait 500ms between requests
+            await new Promise(res => setTimeout(res, 500));
+        };
+
+        await performActionWithRetry(actionFunction, i);
+    }
+};
+
 // Main function
 const main = async () => {
     displayHeader();
@@ -501,7 +596,8 @@ const main = async () => {
     console.log('🎨 1. Paint the World'.green);
     console.log('🪙  2. Claim Mining Rewards'.green);
     console.log('🔗 3. Improve Account'.green);
-    console.log('✖️  4. Exit'.green);
+    console.log('🏆 4. Claim Rewards for Leagues'.green); // New option
+    console.log('✖️  5. Exit'.green); // Updated exit option
 
     const choice = askQuestion('Enter the option number: ');
 
@@ -516,6 +612,9 @@ const main = async () => {
             await improveAccount();
             break;
         case '4':
+            await claimLeagueRewards();
+            break;
+        case '5':
             console.log('Exiting...'.green);
             process.exit(0);
             break;

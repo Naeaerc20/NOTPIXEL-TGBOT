@@ -108,6 +108,72 @@ const improveEnergyLimit = async (queryId) => {
     }
 };
 
+// Nuevas APIs para reclamar recompensas de ligas
+const getSquadRatingsBronze = async (queryId) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/ratings/squads?league=bronze`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+const checkLeagueBonusSilver = async (queryId) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/mining/task/check/leagueBonusSilver`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+const checkLeagueBonusGold = async (queryId) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/mining/task/check/leagueBonusGold`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+const checkLeagueBonusPlatinum = async (queryId) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/mining/task/check/leagueBonusPlatinum`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+const checkPaint20Pixels = async (queryId) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/mining/task/check/paint20pixels`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
 // Exportar todas las funciones
 module.exports = {
     getUserInfo,
@@ -116,5 +182,11 @@ module.exports = {
     claimMiningRewards,
     improvePaintReward,
     improveRechargeSpeed,
-    improveEnergyLimit
+    improveEnergyLimit,
+    getSquadRatingsBronze,
+    checkLeagueBonusSilver,
+    checkLeagueBonusGold,
+    checkLeagueBonusPlatinum,
+    checkPaint20Pixels
 };
+

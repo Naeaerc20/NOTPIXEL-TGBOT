@@ -27,7 +27,8 @@ const {
     checkLeagueBonusSilver,
     checkLeagueBonusGold,
     checkLeagueBonusPlatinum,
-    checkPaint20Pixels
+    checkPaint20Pixels,
+    checkMakePixelAvatar // Importar la nueva función
 } = require('./scripts/apis');
 
 // Directories and file paths
@@ -567,6 +568,23 @@ const claimLeagueRewards = async () => {
                         console.log(`❌ ${firstName} had a problem while claiming points for painting the world 20 times. Please try again later.`.red);
                     } else {
                         console.log(`❌ ${firstName} had a problem while claiming points for painting the world 20 times. Please try again later.`.red);
+                    }
+                }
+
+                // Claim points for "Make Pixel Avatar" task
+                try {
+                    const avatarResponse = await checkMakePixelAvatar(tgWebAppData);
+                    if (avatarResponse.makePixelAvatar === true) {
+                        const updatedUserInfo = await getUserInfo(tgWebAppData);
+                        const newPoints = updatedUserInfo.balance;
+                        console.log(`✅ ${firstName} has successfully completed the "Make Pixel Avatar" task - Your points are now: ${newPoints}`.green);
+                        rewardsClaimed = true;
+                    }
+                } catch (error) {
+                    if (error.response && [400].includes(error.response.status)) {
+                        console.log(`❌ ${firstName} had a problem while claiming points for the "Make Pixel Avatar" task. Please try again later.`.red);
+                    } else {
+                        console.log(`❌ ${firstName} had a problem while claiming points for the "Make Pixel Avatar" task. Please try again later.`.red);
                     }
                 }
 

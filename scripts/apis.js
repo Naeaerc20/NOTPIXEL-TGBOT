@@ -174,6 +174,20 @@ const checkPaint20Pixels = async (queryId) => {
     }
 };
 
+// Nueva API para la tarea "Make Pixel Avatar"
+const checkMakePixelAvatar = async (queryId) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/mining/task/check/makePixelAvatar`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
 // Exportar todas las funciones
 module.exports = {
     getUserInfo,
@@ -187,6 +201,6 @@ module.exports = {
     checkLeagueBonusSilver,
     checkLeagueBonusGold,
     checkLeagueBonusPlatinum,
-    checkPaint20Pixels
+    checkPaint20Pixels,
+    checkMakePixelAvatar // Exportar la nueva función
 };
-

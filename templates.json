@@ -1,0 +1,14 @@
+[
+    {
+        "id": 1,
+        "name": "LL DESIGN",
+        "templateId": 305094295,
+        "minPixelId": 822353,
+        "maxPixelId": 854480,
+        "minX": 352,
+        "maxX": 480,
+        "minY": 822,
+        "maxY": 854,
+        "color": "#000000"
+    }
+]

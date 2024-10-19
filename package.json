@@ -6,7 +6,10 @@
     "console-clear": "^1.1.1",
     "dotenv": "^16.4.5",
     "figlet": "^1.7.0",
+    "jimp": "^0.16.1",
+    "puppeteer": "^23.5.3",
     "readline-sync": "^1.4.10",
+    "sharp": "^0.33.5",
     "telegram": "^2.25.11"
   }
 }

@@ -66,7 +66,7 @@ const claimMiningRewards = async (queryId) => {
     }
 };
 
-// Función para mejorar la recompensa por pintado
+// Funciones para mejorar el rendimiento
 const improvePaintReward = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/mining/boost/check/paintReward`, {
@@ -80,7 +80,6 @@ const improvePaintReward = async (queryId) => {
     }
 };
 
-// Función para mejorar la velocidad de recarga
 const improveRechargeSpeed = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/mining/boost/check/reChargeSpeed`, {
@@ -94,7 +93,6 @@ const improveRechargeSpeed = async (queryId) => {
     }
 };
 
-// Función para mejorar el límite de energía (cantidad máxima de pintados)
 const improveEnergyLimit = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/mining/boost/check/energyLimit`, {
@@ -108,10 +106,11 @@ const improveEnergyLimit = async (queryId) => {
     }
 };
 
-// Nuevas APIs para reclamar recompensas de ligas
-const getSquadRatingsBronze = async (queryId) => {
+
+// Función para obtener detalles de un pixel específico
+const getPixelDetails = async (queryId, pixelId) => {
     try {
-        const response = await axios.get(`${BASE_URL}/ratings/squads?league=bronze`, {
+        const response = await axios.get(`${BASE_URL}/image/get/${pixelId}`, {
             headers: {
                 authorization: `initData ${queryId}`
             }
@@ -122,73 +121,37 @@ const getSquadRatingsBronze = async (queryId) => {
     }
 };
 
-const checkLeagueBonusSilver = async (queryId) => {
+// Función para verificar una plantilla
+const checkTemplate = async (queryId, templateId) => {
     try {
-        const response = await axios.get(`${BASE_URL}/mining/task/check/leagueBonusSilver`, {
+        const response = await axios.get(`${BASE_URL}/image/template/${templateId}`, {
             headers: {
                 authorization: `initData ${queryId}`
             }
         });
-        return response.data;
+        return response.status; // Devolvemos el código de estado
+    } catch (error) {
+        if (error.response) {
+            return error.response.status; // Devolvemos el código de error
+        }
+        throw error;
+    }
+};
+
+// Función para establecer una plantilla como predeterminada
+const setDefaultTemplate = async (queryId, templateId) => {
+    try {
+        const response = await axios.put(`${BASE_URL}/image/template/subscribe/${templateId}`, null, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.status; // Devolvemos el código de estado
     } catch (error) {
         throw error;
     }
 };
 
-const checkLeagueBonusGold = async (queryId) => {
-    try {
-        const response = await axios.get(`${BASE_URL}/mining/task/check/leagueBonusGold`, {
-            headers: {
-                authorization: `initData ${queryId}`
-            }
-        });
-        return response.data;
-    } catch (error) {
-        throw error;
-    }
-};
-
-const checkLeagueBonusPlatinum = async (queryId) => {
-    try {
-        const response = await axios.get(`${BASE_URL}/mining/task/check/leagueBonusPlatinum`, {
-            headers: {
-                authorization: `initData ${queryId}`
-            }
-        });
-        return response.data;
-    } catch (error) {
-        throw error;
-    }
-};
-
-const checkPaint20Pixels = async (queryId) => {
-    try {
-        const response = await axios.get(`${BASE_URL}/mining/task/check/paint20pixels`, {
-            headers: {
-                authorization: `initData ${queryId}`
-            }
-        });
-        return response.data;
-    } catch (error) {
-        throw error;
-    }
-};
-
-// Nueva API para la tarea "Make Pixel Avatar"
-const checkMakePixelAvatar = async (queryId) => {
-    try {
-        const response = await axios.get(`${BASE_URL}/mining/task/check/makePixelAvatar`, {
-            headers: {
-                authorization: `initData ${queryId}`
-            }
-        });
-        return response.data;
-    } catch (error) {
-        throw error;
-    }
-};
-
-// Exportar todas las funciones
 module.exports = {
     getUserInfo,
     getMiningStatus,
@@ -197,10 +160,7 @@ module.exports = {
     improvePaintReward,
     improveRechargeSpeed,
     improveEnergyLimit,
-    getSquadRatingsBronze,
-    checkLeagueBonusSilver,
-    checkLeagueBonusGold,
-    checkLeagueBonusPlatinum,
-    checkPaint20Pixels,
-    checkMakePixelAvatar // Exportar la nueva función
+    getPixelDetails,
+    checkTemplate,
+    setDefaultTemplate
 };

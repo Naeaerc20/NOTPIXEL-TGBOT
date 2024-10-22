@@ -93,6 +93,11 @@ function askQuestion(question) {
     return readlineSync.question(question);
 }
 
+// Function to introduce a delay (ms)
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // Function to log in with a phone number
 async function loginWithPhoneNumber(account) {
     const { id, api_id, api_hash, phone_number } = account;
@@ -152,6 +157,8 @@ async function loginWithSessionFile(account) {
 async function loadAllAccounts() {
     for (const account of telegramAPIs) {
         await loginWithSessionFile(account);
+        // Introduce a small delay between account logins to prevent rapid consecutive requests
+        await delay(100);
     }
 }
 
@@ -214,6 +221,9 @@ async function updateWebAppData() {
         } else {
             accountsWebAppData.push(null);
         }
+
+        // Introduce a small delay between account updates to prevent rapid consecutive requests
+        await delay(100);
     }
 
     fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
@@ -242,7 +252,7 @@ const pause = () => {
 // Function to handle errors and retry actions
 async function performActionWithRetry(actionFunction, dataIndex) {
     try {
-        await actionFunction();
+        return await actionFunction();
     } catch (error) {
         console.error(`Error encountered: ${error.message}`.red);
 
@@ -251,19 +261,27 @@ async function performActionWithRetry(actionFunction, dataIndex) {
 
         if ([401, 403].includes(status)) {
             console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Renewing...`.yellow);
-            await renewQueryId(dataIndex, actionFunction); // Pass actionFunction to retry
-        } else if (status === 400) {
-            console.log(`Received error 400 for account ID ${dataIndex + 1}. Checking painting opportunities...`.yellow);
-            await checkPaintingOpportunities(dataIndex);
+            await renewQueryId(dataIndex);
+
+            // Introduce a delay after renewing to prevent immediate retry
+            await delay(100);
+
+            // Reintentar la acción después de renovar
+            try {
+                return await actionFunction();
+            } catch (retryError) {
+                console.error(`Retry failed: ${retryError.message}`.red);
+                throw retryError; // O manejar según sea necesario
+            }
         } else {
             console.error(`Unhandled error: ${error.message}`.red);
-            // Optionally, you can decide to throw the error or continue
+            throw error; // O manejar según sea necesario
         }
     }
 }
 
-// Function to renew the query_id for a specific account and retry the failed action
-async function renewQueryId(dataIndex, actionFunction) {
+// Function to renew the query_id for a specific account
+async function renewQueryId(dataIndex) {
     const accountEntry = telegramAPIs[dataIndex];
     const { id, phone_number } = accountEntry;
 
@@ -285,12 +303,12 @@ async function renewQueryId(dataIndex, actionFunction) {
             accountsWebAppData[dataIndex] = newWebAppData;
             fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
             console.log('accounts.json updated with new tgWebAppData'.green);
-
-            // Retry the failed action
-            await actionFunction();
         } else {
             throw new Error(`Failed to obtain new tgWebAppData for account ID: ${id}`);
         }
+
+        // Introduce a delay after renewing to prevent immediate subsequent requests
+        await delay(100);
     } catch (error) {
         console.error(`Failed to renew query_id for account ID ${id}: ${error.message}`.red);
     }
@@ -350,7 +368,10 @@ async function setDefaultTemplateForAll(templateId) {
         }
 
         // Delay of 10ms between template selections
-        await new Promise(res => setTimeout(res, 10));
+        await delay(10);
+
+        // Introduce a small delay between processing accounts to prevent rapid consecutive requests
+        await delay(100);
     }
 }
 
@@ -370,7 +391,7 @@ const startToPaint = async (selectedTemplate) => {
     await setDefaultTemplateForAll(selectedTemplate.templateId);
 
     // Initialize currentPixelId
-    const { minPixelId } = selectedTemplate;
+    const { minPixelId, maxPixelId, minX, maxX, minY, maxY, color: targetColor } = selectedTemplate;
     if (currentPixelId === 0) {
         currentPixelId = minPixelId;
     }
@@ -383,9 +404,15 @@ const startToPaint = async (selectedTemplate) => {
                 continue;
             }
 
-            // Fetch and update charges for the current account
-            try {
+            // Definir la acción para obtener el estado de minería
+            const actionGetMiningStatus = async () => {
                 const miningStatus = await getMiningStatus(query_id);
+                return miningStatus;
+            };
+
+            let miningStatus;
+            try {
+                miningStatus = await performActionWithRetry(actionGetMiningStatus, i);
                 accountCharges[i] = miningStatus.charges !== undefined ? miningStatus.charges : 0;
                 console.log(`✅ Account ID ${i + 1} has ${accountCharges[i]} painting opportunities remaining.`);
             } catch (error) {
@@ -400,80 +427,85 @@ const startToPaint = async (selectedTemplate) => {
                 continue;
             }
 
-            const template = selectedTemplate;
-            const { name, templateId, minPixelId, maxPixelId, color: targetColor, minX, maxX, minY, maxY } = template;
-
-            console.log(`\n🎨 Processing template: ${name} (ID: ${templateId}) for account ID ${i + 1}`);
+            console.log(`\n🎨 Processing template: ${selectedTemplate.name} (ID: ${selectedTemplate.templateId}) for account ID ${i + 1}`);
 
             while (currentPixelId <= maxPixelId && accountCharges[i] > 0) {
-                // Define the action to get pixel details
+                // Convert pixel ID to X and Y coordinates
+                const pixelY = Math.floor(currentPixelId / 1000); // Extract Y from the pixel ID
+                const pixelX = currentPixelId % 1000; // Extract X from the pixel ID
+
+                // Verify if the pixel is within the template boundaries
+                if (pixelX < minX || pixelX > maxX || pixelY < minY || pixelY > maxY) {
+                    console.log(`ℹ️ Pixel ID ${currentPixelId} (X:${pixelX}, Y:${pixelY}) is out of the template boundaries. Skipping...`.cyan);
+
+                    // Jump to the next line (next Y coordinate)
+                    currentPixelId = (pixelY + 1) * 1000 + minX; // Reset to the beginning of the next Y row
+                    continue;
+                }
+
+                // Define la acción para obtener detalles del pixel
                 const actionGetPixelDetails = async () => {
                     const pixelDetails = await getPixelDetails(query_id, currentPixelId);
                     const currentColor = pixelDetails.pixel.color;
-                    const pixelX = pixelDetails.pixel.x;
-                    const pixelY = pixelDetails.pixel.y;
-
-                    // Verify if the pixel is within the template coordinates
-                    if (pixelX < minX || pixelX > maxX || pixelY < minY || pixelY > maxY) {
-                        console.log(`ℹ️ Pixel ID ${currentPixelId} (X:${pixelX}, Y:${pixelY}) is out of the template boundaries. Skipping...`.cyan);
-                        return;
-                    }
 
                     if (currentColor.toLowerCase() !== targetColor.toLowerCase()) {
-                        // Define the action to start repaint
+                        // Define la acción para iniciar el repintado
                         const actionStartRepaint = async () => {
                             const repaintResponse = await startRepaint(query_id, targetColor, currentPixelId);
                             if (repaintResponse.balance !== undefined) {
                                 const balance = parseFloat(repaintResponse.balance).toFixed(2);
                                 console.log(`✅ Pixel ID ${currentPixelId} painted with color ${targetColor}. Your Points are now: ${balance}`.green);
-                                // Decrement the painting opportunities after successful paint
+                                // Decrementar las oportunidades de pintura después de un repintado exitoso
                                 accountCharges[i] -= 1;
                             } else {
                                 console.log(`⛔️ Could not paint Pixel ID ${currentPixelId}.`.red);
                             }
                         };
 
-                        // Handle repaint action with retry
+                        // Manejar la acción de repintado con retry
                         await performActionWithRetry(actionStartRepaint, i);
                     } else {
                         console.log(`ℹ️ Pixel ID ${currentPixelId} already has the correct color.`.cyan);
                     }
                 };
 
-                // Handle getPixelDetails action with retry
+                // Manejar la acción de obtener detalles del pixel con retry
                 await performActionWithRetry(actionGetPixelDetails, i);
 
                 currentPixelId++;
 
-                // Delay of 300ms between pixel checks
-                await new Promise(res => setTimeout(res, 300));
+                // Delay de 300ms entre verificaciones de pixel
+                await delay(300);
             }
 
             console.log(`✅ Finished processing for account ID ${i + 1}.`.green);
 
-            // Delay of 200ms before moving to the next account
-            await new Promise(res => setTimeout(res, 200));
+            // Delay de 200ms antes de pasar a la siguiente cuenta
+            await delay(200);
 
-            // Reset currentPixelId if it exceeds maxPixelId
-            if (currentPixelId > selectedTemplate.maxPixelId) {
+            // Reset currentPixelId si excede maxPixelId
+            if (currentPixelId > maxPixelId) {
                 console.log('🔄 Reached the maximum Pixel ID. Resetting to minPixelId.'.blue);
-                currentPixelId = selectedTemplate.minPixelId;
+                currentPixelId = minPixelId;
             }
+
+            // Introduce una pequeña demora entre procesar cada cuenta
+            await delay(100);
         }
 
         console.log('\n🔄 Painting process completed.'.blue);
     };
 
-    // Execute the painting process
+    // Ejecutar el proceso de pintura
     await executePainting();
 
-    // If the user wants to keep running the code constantly, schedule every 10 minutes
+    // Si el usuario desea mantener el código corriendo constantemente, programar cada 10 minutos
     if (keepRunning) {
         console.log('🕒 The process will run every 10 minutes.'.yellow);
         setInterval(async () => {
             console.log('\n🔄 Starting scheduled painting execution.'.blue);
             await executePainting();
-        }, 10 * 60 * 1000); // 10 minutes in milliseconds
+        }, 10 * 60 * 1000); // 10 minutos en milisegundos
     }
 };
 
@@ -506,7 +538,7 @@ const displayAccountsTable = async () => {
             'PX Farmed'.red,
             'Paint Chances'.red,
             'League'.red,
-            'Squad'.red
+           'Squad'.red
         ]
     });
 
@@ -527,18 +559,24 @@ const displayAccountsTable = async () => {
         }
 
         try {
-            const userInfo = await getUserInfo(tgWebAppData);
-            // Do not fetch miningStatus here to avoid premature errors
+            // Obtener el estado de minería, que ahora contiene PX Farmed y Paint Chances
+            const miningStatus = await performActionWithRetry(() => getMiningStatus(tgWebAppData), i);
 
-            // Extract only the first word of the firstName
-            const name = userInfo.firstName
-                ? userInfo.firstName.trim().split(/\s+/)[0]
-                : 'N/A';
-            const pxFarmed = userInfo.balance !== undefined ? userInfo.balance.toFixed(2) : 'N/A';
-            const paintChances = 'N/A'; // Will be updated during painting
+            // Obtener el balance (PX Farmed) desde userBalance y redondearlo sin decimales
+            const pxFarmed = miningStatus.userBalance !== undefined ? Math.floor(miningStatus.userBalance) : 'N/A';
+
+            // Obtener las oportunidades de pintar (Paint Chances)
+            const paintChances = miningStatus.charges !== undefined ? miningStatus.charges : 'N/A';
+
+            // Obtener el nombre del usuario desde getUserInfo
+            const userInfo = await performActionWithRetry(() => getUserInfo(tgWebAppData), i);
+            const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
+
+            // Obtener otros datos del usuario
             const league = userInfo.league || 'N/A';
             const squad = userInfo.squad && userInfo.squad.name ? userInfo.squad.name : 'N/A';
 
+            // Añadir los datos a la tabla
             table.push([
                 i + 1,
                 name,
@@ -547,6 +585,9 @@ const displayAccountsTable = async () => {
                 league,
                 squad
             ]);
+
+            // Introduce una pequeña demora entre procesar cada cuenta para evitar sobrecarga
+            await delay(100);
         } catch (error) {
             table.push([
                 i + 1,
@@ -613,3 +654,4 @@ const main = async () => {
     await updateWebAppData();
     main();
 })();
+

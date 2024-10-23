@@ -1,14 +1,35 @@
 [
     {
         "id": 1,
-        "name": "LL DESIGN",
-        "templateId": 305094295,
-        "minPixelId": 822353,
-        "maxPixelId": 854480,
-        "minX": 352,
-        "maxX": 480,
-        "minY": 822,
-        "maxY": 854,
-        "color": "#000000"
+        "name": "OKX",
+        "templateId": 1972552043,
+        "minPixelId": 271112,
+        "maxPixelId": 398239,
+        "minX": 111,
+        "maxX": 238,
+        "minY": 271,
+        "maxY": 398
+    },
+    {
+        "id": 2,
+        "name": "MAJOR",
+        "templateId": 1709562088,
+        "minPixelId": 181108,
+        "maxPixelId": 308235,
+        "minX": 107,
+        "maxX": 234,
+        "minY": 181,
+        "maxY": 308
+    },
+    {
+        "id": 3,
+        "name": "COW",
+        "templateId": 6488960520,
+        "minPixelId": 914657,
+        "maxPixelId": 977720,
+        "minX": 656,
+        "maxX": 719,
+        "minY": 914,
+        "maxY": 977
     }
 ]

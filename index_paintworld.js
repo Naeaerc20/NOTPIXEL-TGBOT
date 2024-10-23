@@ -9,6 +9,7 @@ const axios = require('axios');
 const readlineSync = require('readline-sync');
 const fs = require('fs');
 const path = require('path');
+const Jimp = require('jimp');
 
 // Import Telegram functions
 const { Api, TelegramClient } = require('telegram');
@@ -40,7 +41,9 @@ let colorsList = [];
 
 try {
     const colorsData = fs.readFileSync(colorsPath, 'utf-8');
-    colorsList = JSON.parse(colorsData);
+    const colorsArray = JSON.parse(colorsData);
+    // Extract only the hex color codes
+    colorsList = colorsArray.map(item => item[0]); // Assuming each item is ["#E46E6E", "coral"]
 } catch (error) {
     console.error('Error loading colors.json'.red);
     process.exit(1);
@@ -158,7 +161,7 @@ async function loadAllAccounts() {
     for (const account of telegramAPIs) {
         await loginWithSessionFile(account);
         // Introduce a small delay between account logins to prevent rapid consecutive requests
-        await delay(100);
+        await delay(50); // Añadimos una demora de 50ms
     }
 }
 
@@ -223,7 +226,7 @@ async function updateWebAppData() {
         }
 
         // Introduce a small delay between account updates to prevent rapid consecutive requests
-        await delay(100);
+        await delay(50); // Añadimos una demora de 50ms
     }
 
     fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
@@ -266,16 +269,16 @@ async function performActionWithRetry(actionFunction, dataIndex) {
             // Introduce a delay after renewing to prevent immediate retry
             await delay(100);
 
-            // Reintentar la acción después de renovar
+            // Retry the action after renewing
             try {
                 return await actionFunction();
             } catch (retryError) {
                 console.error(`Retry failed: ${retryError.message}`.red);
-                throw retryError; // O manejar según sea necesario
+                throw retryError;
             }
         } else {
             console.error(`Unhandled error: ${error.message}`.red);
-            throw error; // O manejar según sea necesario
+            throw error;
         }
     }
 }
@@ -308,208 +311,96 @@ async function renewQueryId(dataIndex) {
         }
 
         // Introduce a delay after renewing to prevent immediate subsequent requests
-        await delay(100);
+        await delay(50); // Añadimos una demora de 50ms
     } catch (error) {
         console.error(`Failed to renew query_id for account ID ${id}: ${error.message}`.red);
     }
 }
 
-// Function to check painting opportunities when error 400 occurs
-async function checkPaintingOpportunities(dataIndex) {
-    const accountEntry = telegramAPIs[dataIndex];
-    const { phone_number } = accountEntry;
-    const query_id = accountsWebAppData[dataIndex];
-
-    if (!query_id) {
-        console.log(`⛔️ Account ID ${dataIndex + 1} does not have a valid tgWebAppData.`.red);
-        accountCharges[dataIndex] = 0;
-        return;
-    }
+// Function to load template image and create a color matrix
+async function loadTemplateImage(template) {
+    const { templateId } = template;
+    const imageUrl = `https://static.notpx.app/templates/${templateId}.png`;
+    console.log(`Downloading template image from ${imageUrl}`);
 
     try {
-        const miningStatus = await getMiningStatus(query_id);
-        if (miningStatus.charges > 0) {
-            console.log(`✅ Account ID ${dataIndex + 1} has ${miningStatus.charges} painting opportunities remaining.`.green);
-            accountCharges[dataIndex] = miningStatus.charges;
-        } else {
-            console.log(`🔴 Account ID ${dataIndex + 1} has no more painting opportunities. Skipping to next account.`.red);
-            accountCharges[dataIndex] = 0;
-        }
-    } catch (error) {
-        console.error(`⛔️ Error fetching mining status for account ID ${dataIndex + 1}: ${error.message}`.red);
-        accountCharges[dataIndex] = 0;
-    }
-}
+        const image = await Jimp.read(imageUrl);
+        const width = image.bitmap.width;
+        const height = image.bitmap.height;
+        console.log(`Template image loaded with dimensions: ${width}x${height}`);
 
-// Global Pixel Tracker
-let currentPixelId = 0;
+        // Create a matrix to store color data
+        const colorMatrix = [];
 
-// Function to set default template for all accounts
-async function setDefaultTemplateForAll(templateId) {
-    console.log(`\n🔄 Setting default template ID ${templateId} for all accounts.`.blue);
-    for (let i = 0; i < accountsWebAppData.length; i++) {
-        let query_id = accountsWebAppData[i];
-        if (!query_id) {
-            console.log(`\n⛔️ Account ID ${i + 1} does not have a valid tgWebAppData.`.red);
-            continue;
-        }
-
-        try {
-            const response = await setDefaultTemplate(query_id, templateId);
-            if (response === 200 || response === 201) { // Assuming success status codes
-                console.log(`✅ Default template set for account ID ${i + 1}.`.green);
-            }
-        } catch (error) {
-            if (error.response && [402, 403].includes(error.response.status)) {
-                console.log(`ℹ️ Default template already set for account ID ${i + 1}.`.cyan);
-            } else {
-                console.log(`⛔️ Could not set default template for account ID ${i + 1}.`.red);
-            }
-        }
-
-        // Delay of 10ms between template selections
-        await delay(10);
-
-        // Introduce a small delay between processing accounts to prevent rapid consecutive requests
-        await delay(100);
-    }
-}
-
-// Function to start the painting process
-const startToPaint = async (selectedTemplate) => {
-    // Prompt to keep running the code constantly at the start
-    let keepRunning = false;
-    const userChoice = askQuestion('Do you wish to keep running the code constantly? (y/n): ').toLowerCase();
-    if (userChoice === 'y') {
-        keepRunning = true;
-        isRunning = true; // Set the global flag
-    }
-
-    console.log('\n🔄 Starting the painting process with the selected template'.blue);
-
-    // Set the selected template as default for all accounts
-    await setDefaultTemplateForAll(selectedTemplate.templateId);
-
-    // Initialize currentPixelId
-    const { minPixelId, maxPixelId, minX, maxX, minY, maxY, color: targetColor } = selectedTemplate;
-    if (currentPixelId === 0) {
-        currentPixelId = minPixelId;
-    }
-
-    const executePainting = async () => {
-        for (let i = 0; i < accountsWebAppData.length; i++) {
-            let query_id = accountsWebAppData[i];
-            if (!query_id) {
-                console.log(`\n⛔️ Account ID ${i + 1} does not have a valid tgWebAppData.`.red);
-                continue;
-            }
-
-            // Definir la acción para obtener el estado de minería
-            const actionGetMiningStatus = async () => {
-                const miningStatus = await getMiningStatus(query_id);
-                return miningStatus;
-            };
-
-            let miningStatus;
-            try {
-                miningStatus = await performActionWithRetry(actionGetMiningStatus, i);
-                accountCharges[i] = miningStatus.charges !== undefined ? miningStatus.charges : 0;
-                console.log(`✅ Account ID ${i + 1} has ${accountCharges[i]} painting opportunities remaining.`);
-            } catch (error) {
-                console.error(`⛔️ Error fetching mining status for account ID ${i + 1}: ${error.message}`.red);
-                accountCharges[i] = 0;
-                continue;
-            }
-
-            // Skip account if no charges
-            if (accountCharges[i] <= 0) {
-                console.log(`🔴 Account ID ${i + 1} has no painting opportunities left. Skipping...`.red);
-                continue;
-            }
-
-            console.log(`\n🎨 Processing template: ${selectedTemplate.name} (ID: ${selectedTemplate.templateId}) for account ID ${i + 1}`);
-
-            while (currentPixelId <= maxPixelId && accountCharges[i] > 0) {
-                // Convert pixel ID to X and Y coordinates
-                const pixelY = Math.floor(currentPixelId / 1000); // Extract Y from the pixel ID
-                const pixelX = currentPixelId % 1000; // Extract X from the pixel ID
-
-                // Verify if the pixel is within the template boundaries
-                if (pixelX < minX || pixelX > maxX || pixelY < minY || pixelY > maxY) {
-                    console.log(`ℹ️ Pixel ID ${currentPixelId} (X:${pixelX}, Y:${pixelY}) is out of the template boundaries. Skipping...`.cyan);
-
-                    // Jump to the next line (next Y coordinate)
-                    currentPixelId = (pixelY + 1) * 1000 + minX; // Reset to the beginning of the next Y row
-                    continue;
+        for (let y = 0; y < height; y++) {
+            const row = [];
+            for (let x = 0; x < width; x++) {
+                const pixelColorHex = image.getPixelColor(x, y);
+                const rgba = Jimp.intToRGBA(pixelColorHex);
+                const alpha = rgba.a;
+                // Skip transparent pixels
+                if (alpha === 0) {
+                    row.push(null);
+                } else {
+                    const colorHexString = `#${((rgba.r << 16) + (rgba.g << 8) + rgba.b).toString(16).padStart(6, '0').toUpperCase()}`;
+                    row.push(colorHexString);
                 }
-
-                // Define la acción para obtener detalles del pixel
-                const actionGetPixelDetails = async () => {
-                    const pixelDetails = await getPixelDetails(query_id, currentPixelId);
-                    const currentColor = pixelDetails.pixel.color;
-
-                    if (currentColor.toLowerCase() !== targetColor.toLowerCase()) {
-                        // Define la acción para iniciar el repintado
-                        const actionStartRepaint = async () => {
-                            const repaintResponse = await startRepaint(query_id, targetColor, currentPixelId);
-                            if (repaintResponse.balance !== undefined) {
-                                const balance = parseFloat(repaintResponse.balance).toFixed(2);
-                                console.log(`✅ Pixel ID ${currentPixelId} painted with color ${targetColor}. Your Points are now: ${balance}`.green);
-                                // Decrementar las oportunidades de pintura después de un repintado exitoso
-                                accountCharges[i] -= 1;
-                            } else {
-                                console.log(`⛔️ Could not paint Pixel ID ${currentPixelId}.`.red);
-                            }
-                        };
-
-                        // Manejar la acción de repintado con retry
-                        await performActionWithRetry(actionStartRepaint, i);
-                    } else {
-                        console.log(`ℹ️ Pixel ID ${currentPixelId} already has the correct color.`.cyan);
-                    }
-                };
-
-                // Manejar la acción de obtener detalles del pixel con retry
-                await performActionWithRetry(actionGetPixelDetails, i);
-
-                currentPixelId++;
-
-                // Delay de 300ms entre verificaciones de pixel
-                await delay(300);
             }
-
-            console.log(`✅ Finished processing for account ID ${i + 1}.`.green);
-
-            // Delay de 200ms antes de pasar a la siguiente cuenta
-            await delay(200);
-
-            // Reset currentPixelId si excede maxPixelId
-            if (currentPixelId > maxPixelId) {
-                console.log('🔄 Reached the maximum Pixel ID. Resetting to minPixelId.'.blue);
-                currentPixelId = minPixelId;
-            }
-
-            // Introduce una pequeña demora entre procesar cada cuenta
-            await delay(100);
+            colorMatrix.push(row);
         }
 
-        console.log('\n🔄 Painting process completed.'.blue);
-    };
-
-    // Ejecutar el proceso de pintura
-    await executePainting();
-
-    // Si el usuario desea mantener el código corriendo constantemente, programar cada 10 minutos
-    if (keepRunning) {
-        console.log('🕒 The process will run every 10 minutes.'.yellow);
-        setInterval(async () => {
-            console.log('\n🔄 Starting scheduled painting execution.'.blue);
-            await executePainting();
-        }, 10 * 60 * 1000); // 10 minutos en milisegundos
+        return colorMatrix;
+    } catch (error) {
+        console.error(`Error loading template image: ${error.message}`.red);
+        throw error;
     }
-};
+}
 
-// Function to select the template
+// Function to find the closest color from the game's color palette
+function findClosestColor(targetColor) {
+    const targetRGB = hexToRgb(targetColor);
+
+    let minDistance = Infinity;
+    let closestColor = null;
+
+    for (const colorHex of colorsList) {
+        const colorRGB = hexToRgb(colorHex);
+        const distance = colorDistance(targetRGB, colorRGB);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestColor = colorHex;
+        }
+    }
+
+    return closestColor;
+}
+
+// Function to convert hex color to RGB object
+function hexToRgb(hex) {
+    if (typeof hex !== 'string') {
+        console.error(`Invalid hex value: ${hex}`);
+        return { r: 0, g: 0, b: 0 }; // Or handle the error appropriately
+    }
+    // Remove "#" if present
+    hex = hex.replace('#', '');
+    const bigint = parseInt(hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+
+    return { r, g, b };
+}
+
+// Function to calculate color distance
+function colorDistance(c1, c2) {
+    return Math.sqrt(
+        Math.pow(c1.r - c2.r, 2) +
+        Math.pow(c1.g - c2.g, 2) +
+        Math.pow(c1.b - c2.b, 2)
+    );
+}
+
+// Function to select a template
 const selectTemplate = () => {
     console.log('\nSelect a template to paint:'.yellow);
     templates.forEach(template => {
@@ -529,7 +420,7 @@ const selectTemplate = () => {
     return selectedTemplate;
 };
 
-// Function to display accounts table with specified columns
+// Function to display the accounts table
 const displayAccountsTable = async () => {
     const table = new Table({
         head: [
@@ -538,7 +429,7 @@ const displayAccountsTable = async () => {
             'PX Farmed'.red,
             'Paint Chances'.red,
             'League'.red,
-           'Squad'.red
+            'Squad'.red
         ]
     });
 
@@ -559,16 +450,16 @@ const displayAccountsTable = async () => {
         }
 
         try {
-            // Obtener el estado de minería, que ahora contiene PX Farmed y Paint Chances
+            // Obtener estado de minería
             const miningStatus = await performActionWithRetry(() => getMiningStatus(tgWebAppData), i);
 
-            // Obtener el balance (PX Farmed) desde userBalance y redondearlo sin decimales
+            // Obtener PX Minados
             const pxFarmed = miningStatus.userBalance !== undefined ? Math.floor(miningStatus.userBalance) : 'N/A';
 
-            // Obtener las oportunidades de pintar (Paint Chances)
+            // Obtener Oportunidades de Pintura
             const paintChances = miningStatus.charges !== undefined ? miningStatus.charges : 'N/A';
 
-            // Obtener el nombre del usuario desde getUserInfo
+            // Obtener información del usuario
             const userInfo = await performActionWithRetry(() => getUserInfo(tgWebAppData), i);
             const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
 
@@ -576,7 +467,7 @@ const displayAccountsTable = async () => {
             const league = userInfo.league || 'N/A';
             const squad = userInfo.squad && userInfo.squad.name ? userInfo.squad.name : 'N/A';
 
-            // Añadir los datos a la tabla
+            // Añadir datos a la tabla
             table.push([
                 i + 1,
                 name,
@@ -586,7 +477,7 @@ const displayAccountsTable = async () => {
                 squad
             ]);
 
-            // Introduce una pequeña demora entre procesar cada cuenta para evitar sobrecarga
+            // Introducir un pequeño retraso entre el procesamiento de cada cuenta para evitar sobrecarga
             await delay(100);
         } catch (error) {
             table.push([
@@ -603,12 +494,292 @@ const displayAccountsTable = async () => {
     console.log(table.toString());
 };
 
-// Main function
+// Function to set default template for assigned templates to each account
+async function setDefaultTemplateForAccounts(templateAssignments) {
+    console.log(`\n🔄 Setting default templates for all accounts.`.blue);
+    for (let i = 0; i < accountsWebAppData.length; i++) {
+        let query_id = accountsWebAppData[i];
+        const assignedTemplate = templateAssignments[i];
+        const account = telegramAPIs[i];
+
+        if (!query_id) {
+            console.log(`\n⛔️ Account ID ${i + 1} does not have a valid tgWebAppData.`.red);
+            continue;
+        }
+
+        try {
+            // Obtener información del usuario para obtener el nombre
+            const userInfo = await performActionWithRetry(() => getUserInfo(query_id), i);
+            const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
+
+            // Intentar establecer la plantilla predeterminada
+            const response = await setDefaultTemplate(query_id, assignedTemplate.templateId);
+            if (response === 200 || response === 201) { // Asumiendo códigos de éxito
+                console.log(`✅ ${assignedTemplate.name} Template Successfully set for ${name}`.green);
+            }
+        } catch (error) {
+            if (error.response && [402, 403].includes(error.response.status)) {
+                // Obtener información del usuario para obtener el nombre
+                try {
+                    const userInfo = await getUserInfo(query_id);
+                    const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
+                    console.log(`ℹ️ ${assignedTemplate.name} Template already set for ${name}.`.cyan);
+                } catch (userError) {
+                    console.log(`ℹ️ ${assignedTemplate.name} Template already set for account ID ${i + 1}.`.cyan);
+                }
+            } else {
+                console.log(`⛔️ Could not set default template for account ID ${i + 1}.`.red);
+            }
+        }
+
+        // Delay de 10ms entre selecciones de plantilla
+        await delay(10);
+
+        // Introducir una pequeña demora entre el procesamiento de cuentas para prevenir solicitudes consecutivas rápidas
+        await delay(50);
+    }
+}
+
+// Function to start the painting process
+const startToPaint = async () => {
+    // Preguntar al usuario si desea usar plantillas aleatorias
+    const useRandomTemplatesInput = askQuestion('Do you wish to use Random Templates for each user? (y/n): ').toLowerCase();
+    const useRandomTemplates = useRandomTemplatesInput === 'y';
+
+    let templateAssignments = []; // Arreglo para almacenar la plantilla asignada a cada cuenta
+
+    if (useRandomTemplates) {
+        // Asignar una plantilla aleatoria a cada cuenta
+        for (let i = 0; i < accountsWebAppData.length; i++) {
+            const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
+            templateAssignments.push(randomTemplate);
+        }
+    } else {
+        // Mostrar lista de plantillas y permitir al usuario seleccionar una
+        const selectedTemplate = selectTemplate();
+        if (selectedTemplate === null) {
+            console.log('No template selected. Exiting...'.red);
+            return;
+        }
+        // Asignar la misma plantilla a todas las cuentas
+        for (let i = 0; i < accountsWebAppData.length; i++) {
+            templateAssignments.push(selectedTemplate);
+        }
+    }
+
+    // Preguntar al usuario si desea mantener el código corriendo constantemente
+    let keepRunning = false;
+    const userChoice = askQuestion('Do you wish to keep running the code constantly? (y/n): ').toLowerCase();
+    if (userChoice === 'y') {
+        keepRunning = true;
+        isRunning = true; // Establecer la bandera global
+    }
+
+    // Establecer las plantillas asignadas como predeterminadas para cada cuenta
+    await setDefaultTemplateForAccounts(templateAssignments);
+
+    console.log('\n🔄 Starting the painting process with the selected template(s)'.blue);
+
+    // Objeto para rastrear el progreso de cada plantilla
+    const templateProgress = {};
+
+    // Función para obtener la lista de píxeles a pintar para una plantilla
+    const getPixelsToPaint = (template) => {
+        const colorMatrix = templateColorMatrices[template.templateId];
+        const { minX, minY, maxX, maxY } = template;
+        const width = colorMatrix[0].length;
+        const height = colorMatrix.length;
+
+        const pixelsToPaint = [];
+        for (let y = 0; y < height; y++) {
+            const gameY = minY + y;
+            if (gameY < minY || gameY > maxY) {
+                continue; // Saltar si está fuera del rango Y
+            }
+            for (let x = 0; x < width; x++) {
+                const gameX = minX + x;
+                if (gameX < minX || gameX > maxX) {
+                    continue; // Saltar si está fuera del rango X
+                }
+                const pixelId = gameY * 1000 + gameX;
+                const imageColor = colorMatrix[y][x];
+
+                if (!imageColor) {
+                    continue; // Saltar píxeles sin color (transparente)
+                }
+
+                // Mapear el color de la imagen al color más cercano del juego
+                const targetColor = findClosestColor(imageColor);
+
+                pixelsToPaint.push({
+                    x: gameX,
+                    y: gameY,
+                    pixelId,
+                    targetColor
+                });
+            }
+        }
+        return pixelsToPaint;
+    };
+
+    // Cargar las imágenes de las plantillas y crear matrices de colores
+    const templateColorMatrices = {};
+    for (const template of templates) {
+        templateColorMatrices[template.templateId] = await loadTemplateImage(template);
+    }
+
+    const executePainting = async () => {
+        // Almacenar las cuentas que tienen oportunidades de pintura
+        const accountsWithCharges = [];
+
+        // Primero, verificar y recopilar las cuentas con oportunidades de pintura
+        for (let i = 0; i < accountsWebAppData.length; i++) {
+            let query_id = accountsWebAppData[i];
+            if (!query_id) {
+                continue;
+            }
+
+            // Obtener el estado de minería y las oportunidades de pintura
+            let miningStatus;
+            try {
+                miningStatus = await performActionWithRetry(() => getMiningStatus(query_id), i);
+                accountCharges[i] = miningStatus.charges !== undefined ? miningStatus.charges : 0;
+
+                if (accountCharges[i] > 0) {
+                    accountsWithCharges.push({
+                        index: i,
+                        query_id: query_id,
+                        charges: accountCharges[i],
+                        template: templateAssignments[i]
+                    });
+                }
+            } catch (error) {
+                accountCharges[i] = 0;
+                continue;
+            }
+
+            // Introducir un pequeño retraso entre solicitudes
+            await delay(50);
+        }
+
+        // Si no hay cuentas con oportunidades, mostrar un mensaje y salir
+        if (accountsWithCharges.length === 0) {
+            console.log('🔴 No accounts have painting opportunities left. Exiting painting process.'.red);
+            return;
+        }
+
+        // Procesar las cuentas con oportunidades de pintura
+        while (true) {
+            let anyChargesLeft = false;
+
+            for (const accountData of accountsWithCharges) {
+                const { index: i, query_id, template } = accountData;
+                const templateId = template.templateId;
+
+                // Verificar si la cuenta aún tiene oportunidades
+                if (accountCharges[i] <= 0) {
+                    continue;
+                }
+
+                anyChargesLeft = true;
+
+                // Obtener o inicializar currentPixelIndex para esta plantilla y cuenta
+                if (!templateProgress[templateId]) {
+                    templateProgress[templateId] = {};
+                }
+                if (templateProgress[templateId][i] === undefined) {
+                    templateProgress[templateId][i] = 0;
+                }
+
+                const currentPixelIndex = templateProgress[templateId][i];
+
+                // Obtener los píxeles a pintar para esta plantilla
+                const pixelsToPaint = getPixelsToPaint(template);
+
+                // Si hemos procesado todos los píxeles, continuar con la siguiente cuenta
+                if (currentPixelIndex >= pixelsToPaint.length) {
+                    console.log(`✅ All pixels painted for template ID ${templateId} by account ID ${i + 1}.`.green);
+                    continue;
+                }
+
+                console.log(`\n🎨 Processing template: ${template.name} (ID: ${template.templateId}) for account ID ${i + 1}`);
+                console.log(`✅ Account ID ${i + 1} has ${accountCharges[i]} painting opportunities remaining.`);
+
+                // Procesar los píxeles desde currentPixelIndex
+                while (accountCharges[i] > 0 && templateProgress[templateId][i] < pixelsToPaint.length) {
+                    const pixelData = pixelsToPaint[templateProgress[templateId][i]];
+                    const { x: gameX, y: gameY, pixelId, targetColor } = pixelData;
+
+                    // Definir la acción para obtener detalles del píxel
+                    const actionGetPixelDetails = async () => {
+                        const pixelDetails = await getPixelDetails(query_id, pixelId);
+                        const currentColor = pixelDetails.pixel.color;
+
+                        if (currentColor.toLowerCase() !== targetColor.toLowerCase()) {
+                            // Definir la acción para iniciar el repintado
+                            const actionStartRepaint = async () => {
+                                const repaintResponse = await startRepaint(query_id, targetColor, pixelId);
+                                if (repaintResponse.balance !== undefined) {
+                                    const balance = parseFloat(repaintResponse.balance).toFixed(2);
+                                    console.log(`✅ Pixel (${gameX}, ${gameY}) painted with color ${targetColor}. Your Points are now: ${balance}`.green);
+                                    accountCharges[i] -= 1;
+                                } else {
+                                    console.log(`⛔️ Could not paint Pixel (${gameX}, ${gameY}).`.red);
+                                }
+                            };
+                            await performActionWithRetry(actionStartRepaint, i);
+                        } else {
+                            console.log(`ℹ️ Pixel (${gameX}, ${gameY}) already has the correct color.`.cyan);
+                        }
+                    };
+                    await performActionWithRetry(actionGetPixelDetails, i);
+
+                    // Incrementar currentPixelIndex para avanzar al siguiente píxel
+                    templateProgress[templateId][i] += 1;
+
+                    // Retraso entre cada píxel
+                    await delay(300);
+                }
+
+                console.log(`✅ Finished processing for account ID ${i + 1}.`.green);
+
+                // Introduce un pequeño retraso entre cuentas
+                await delay(200);
+            }
+
+            // Verificar si todas las cuentas se han quedado sin oportunidades o todas las plantillas se han completado
+            if (!anyChargesLeft) {
+                console.log('🔴 All accounts have used their painting opportunities or all templates are completed. Exiting painting process.'.red);
+                break;
+            }
+        }
+
+        console.log('\n🔄 Painting process completed.'.blue);
+    };
+
+    // Ejecutar el proceso de pintura
+    await executePainting();
+
+    // Si el usuario desea mantener el código corriendo constantemente, programar cada 10 minutos
+    if (keepRunning) {
+        console.log('🕒 The process will run every 10 minutes.'.yellow);
+        setInterval(async () => {
+            console.log('\n🔄 Starting scheduled painting execution.'.blue);
+            // Reiniciar templateProgress para comenzar desde el inicio en la siguiente ejecución
+            for (let templateId in templateProgress) {
+                templateProgress[templateId] = {};
+            }
+            await executePainting();
+        }, 10 * 60 * 1000); // 10 minutos en milisegundos
+    }
+};
+
+// Function to display the main menu and handle user input
 const main = async () => {
     displayHeader();
     await displayAccountsTable();
 
-    // Display the menu
+    // Mostrar el menú
     console.log('\nSelect an option:'.yellow);
     console.log('1. Start to Paint'.green);
     console.log('2. Exit'.green);
@@ -617,23 +788,16 @@ const main = async () => {
 
     switch (choice) {
         case '1':
-            const selectedTemplate = selectTemplate();
-            if (selectedTemplate !== null) {
-                await startToPaint(selectedTemplate);
-                // After startToPaint, check if isRunning is true
-                if (!isRunning) {
-                    // If not running continuously, return to main menu
-                    await pause();
-                    main();
-                } else {
-                    // If running continuously, do not return to main menu
-                    // Inform the user that the process is running
-                    console.log('\n🔄 The painting process is now running continuously every 10 minutes.'.yellow);
-                }
-            } else {
-                // If no template selected, return to main menu
+            await startToPaint();
+            // Después de startToPaint, verificar si isRunning es true
+            if (!isRunning) {
+                // Si no se está ejecutando continuamente, volver al menú principal
                 await pause();
                 main();
+            } else {
+                // Si se está ejecutando continuamente, no volver al menú principal
+                // Informar al usuario que el proceso está en ejecución
+                console.log('\n🔄 The painting process is now running continuously every 10 minutes.'.yellow);
             }
             break;
         case '2':
@@ -654,4 +818,3 @@ const main = async () => {
     await updateWebAppData();
     main();
 })();
-

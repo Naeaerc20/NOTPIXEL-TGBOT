@@ -2,10 +2,10 @@
 
 const axios = require('axios');
 
-// Configuración base de la API
+// Base configuration of the API
 const BASE_URL = 'https://notpx.app/api/v1';
 
-// Función para obtener información básica del usuario
+// Function to get basic user information
 const getUserInfo = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/users/me`, {
@@ -19,7 +19,7 @@ const getUserInfo = async (queryId) => {
     }
 };
 
-// Función para obtener el estado de minería y oportunidades de pintado
+// Function to get mining status and painting opportunities
 const getMiningStatus = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/mining/status`, {
@@ -33,7 +33,7 @@ const getMiningStatus = async (queryId) => {
     }
 };
 
-// Función para iniciar un pintado de pixel
+// Function to start a pixel repaint
 const startRepaint = async (queryId, newColor, pixelId) => {
     try {
         const payload = {
@@ -52,7 +52,7 @@ const startRepaint = async (queryId, newColor, pixelId) => {
     }
 };
 
-// Función para reclamar recompensas de minería
+// Function to claim mining rewards
 const claimMiningRewards = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/mining/claim`, {
@@ -66,7 +66,7 @@ const claimMiningRewards = async (queryId) => {
     }
 };
 
-// Funciones para mejorar el rendimiento
+// Functions to improve performance
 const improvePaintReward = async (queryId) => {
     try {
         const response = await axios.get(`${BASE_URL}/mining/boost/check/paintReward`, {
@@ -106,8 +106,7 @@ const improveEnergyLimit = async (queryId) => {
     }
 };
 
-
-// Función para obtener detalles de un pixel específico
+// Function to get details of a specific pixel
 const getPixelDetails = async (queryId, pixelId) => {
     try {
         const response = await axios.get(`${BASE_URL}/image/get/${pixelId}`, {
@@ -121,7 +120,7 @@ const getPixelDetails = async (queryId, pixelId) => {
     }
 };
 
-// Función para verificar una plantilla
+// Function to check a template
 const checkTemplate = async (queryId, templateId) => {
     try {
         const response = await axios.get(`${BASE_URL}/image/template/${templateId}`, {
@@ -129,16 +128,16 @@ const checkTemplate = async (queryId, templateId) => {
                 authorization: `initData ${queryId}`
             }
         });
-        return response.status; // Devolvemos el código de estado
+        return response.status; // Return the status code
     } catch (error) {
         if (error.response) {
-            return error.response.status; // Devolvemos el código de error
+            return error.response.status; // Return the error code
         }
         throw error;
     }
 };
 
-// Función para establecer una plantilla como predeterminada
+// Function to set a template as default
 const setDefaultTemplate = async (queryId, templateId) => {
     try {
         const response = await axios.put(`${BASE_URL}/image/template/subscribe/${templateId}`, null, {
@@ -146,7 +145,7 @@ const setDefaultTemplate = async (queryId, templateId) => {
                 authorization: `initData ${queryId}`
             }
         });
-        return response.status; // Devolvemos el código de estado
+        return response.status; // Return the status code
     } catch (error) {
         throw error;
     }

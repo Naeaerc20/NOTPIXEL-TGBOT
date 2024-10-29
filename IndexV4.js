@@ -28,7 +28,7 @@ const {
     improvePaintReward,
     improveRechargeSpeed,
     improveEnergyLimit,
-    getPixelDetails // Importamos la nueva función
+    getPixelDetails
 } = require('./scripts/apis');
 
 // Import promise-limit for concurrency control
@@ -193,7 +193,7 @@ async function loadAllAccounts() {
     for (const account of telegramAPIs) {
         await loginWithSessionFile(account);
         // Introduce a small delay between account logins to prevent rapid consecutive requests
-        await delay(50); // Añadimos una demora de 50ms
+        await delay(50);
     }
 }
 
@@ -213,13 +213,13 @@ async function requestWebViewForClient(client, phoneNumber, accountId) {
             })
         );
 
-        // Extraer el fragmento de la URL
+        // Extract the URL fragment
         const urlFragment = result.url.split('#')[1];
 
-        // Analizar el fragmento como parámetros de URL
+        // Parse the fragment as URL parameters
         const params = new URLSearchParams(urlFragment);
 
-        // Obtener tgWebAppData sin decodificarlo
+        // Get tgWebAppData without decoding it
         const tgWebAppData = params.get('tgWebAppData');
 
         if (!tgWebAppData) {
@@ -227,7 +227,7 @@ async function requestWebViewForClient(client, phoneNumber, accountId) {
             return null;
         }
 
-        // tgWebAppData está codificado en URL, mantenerlo así
+        // tgWebAppData is URL-encoded, keep it as is
         console.log(colors.green(`✅ Extracted tgWebAppData for account ID ${accountId}: ${tgWebAppData}`));
 
         return tgWebAppData;
@@ -255,16 +255,16 @@ async function updateWebAppData() {
             continue;
         }
 
-        // Asignar user agents (obligatorio)
+        // Assign user agents (mandatory)
         const userAgent = userAgents[i % userAgents.length];
 
-        // Asignar proxies si useProxies es verdadero
+        // Assign proxies if useProxies is true
         let proxy = null;
         if (useProxies) {
             proxy = proxies[i % proxies.length] || null;
         }
 
-        // Almacenar los datos de la cuenta
+        // Store account data
         accountsList.push({
             id: id,
             queryId: tgWebAppData,
@@ -272,13 +272,16 @@ async function updateWebAppData() {
             userAgent: userAgent
         });
 
-        // Introducir una pequeña demora entre actualizaciones de cuenta para prevenir solicitudes consecutivas rápidas
-        await delay(50); // Añadimos una demora de 50ms
+        // Introduce a small delay between account updates to prevent rapid consecutive requests
+        await delay(50);
     }
 
-    // Guardar accountsList en accounts.json
+    // Save accountsList to accounts.json
     fs.writeFileSync(accountsPath, JSON.stringify(accountsList, null, 2), 'utf8');
     console.log('accounts.json updated with new tgWebAppData');
+
+    // Update accountsData in memory
+    accountsData = accountsList;
 }
 
 // Load accounts.json
@@ -320,21 +323,18 @@ async function performActionWithRetry(actionFunction, dataIndex) {
         try {
             return await actionFunction();
         } catch (error) {
-            attempts++;
             const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
             if (isTimeout) {
-                // Timeout occurred, retry without additional prints
-                await delay(1000); // Wait 1 second before retrying
+                // Timeout occurred, retry after a delay
+                await delay(1000);
+                attempts++;
                 continue;
             } else if (error.response && [401, 403].includes(error.response.status)) {
-                console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Renewing...`.yellow);
+                console.log(`🔑 tgWebAppData for account ID ${dataIndex + 1} expired. Renewing and will proceed in the next cycle...`.yellow);
                 await renewQueryId(dataIndex);
 
-                // Introduce a delay after renewing to prevent immediate retry
-                await delay(100);
-
-                // Retry the action after renewing
-                continue;
+                // Do not retry immediately; return null to indicate action cannot proceed now
+                return null;
             } else {
                 // Unhandled error, throw
                 throw error;
@@ -349,7 +349,7 @@ async function renewQueryId(dataIndex) {
     const accountEntry = telegramAPIs[dataIndex];
     const { id, phone_number } = accountEntry;
 
-    console.log(`Renewing query_id for account ID: ${id} (${phone_number})`.yellow);
+    console.log(`🔄 Renewing query_id for account ID: ${id} (${phone_number})`.yellow);
 
     try {
         // Re-login with the session file
@@ -372,93 +372,10 @@ async function renewQueryId(dataIndex) {
         }
 
         // Introduce a delay after renewing to prevent immediate subsequent requests
-        await delay(50); // Añadimos una demora de 50ms
+        await delay(50);
     } catch (error) {
         console.error(`Failed to renew query_id for account ID ${id}: ${error.message}`.red);
     }
-}
-
-// Function to load template image and create a color matrix
-async function loadTemplateImage(template) {
-    const { templateId } = template;
-    const imageUrl = `https://static.notpx.app/templates/${templateId}.png`;
-    console.log(`Downloading template image from ${imageUrl}`);
-
-    try {
-        const image = await Jimp.read(imageUrl);
-        const width = image.bitmap.width;
-        const height = image.bitmap.height;
-        console.log(`Template image loaded with dimensions: ${width}x${height}`);
-
-        // Create a matrix to store color data
-        const colorMatrix = [];
-
-        for (let y = 0; y < height; y++) {
-            const row = [];
-            for (let x = 0; x < width; x++) {
-                const pixelColorHex = image.getPixelColor(x, y);
-                const rgba = Jimp.intToRGBA(pixelColorHex);
-                const alpha = rgba.a;
-                // Skip transparent pixels
-                if (alpha === 0) {
-                    row.push(null);
-                } else {
-                    const colorHexString = `#${((rgba.r << 16) + (rgba.g << 8) + rgba.b).toString(16).padStart(6, '0').toUpperCase()}`;
-                    row.push(colorHexString);
-                }
-            }
-            colorMatrix.push(row);
-        }
-
-        return colorMatrix;
-    } catch (error) {
-        console.error(`Error loading template image: ${error.message}`.red);
-        throw error;
-    }
-}
-
-// Function to find the closest color from the game's color palette
-function findClosestColor(targetColor) {
-    const targetRGB = hexToRgb(targetColor);
-
-    let minDistance = Infinity;
-    let closestColor = null;
-
-    for (const colorHex of colorsList) {
-        const colorRGB = hexToRgb(colorHex);
-        const distance = colorDistance(targetRGB, colorRGB);
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestColor = colorHex;
-        }
-    }
-
-    return closestColor;
-}
-
-// Function to convert hex color to RGB object
-function hexToRgb(hex) {
-    if (typeof hex !== 'string') {
-        console.error(`Invalid hex value: ${hex}`);
-        return { r: 0, g: 0, b: 0 }; // Or handle the error appropriately
-    }
-    // Remove "#" if present
-    hex = hex.replace('#', '');
-    const bigint = parseInt(hex, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-
-    return { r, g, b };
-}
-
-// Function to calculate color distance
-function colorDistance(c1, c2) {
-    return Math.sqrt(
-        Math.pow(c1.r - c2.r, 2) +
-        Math.pow(c1.g - c2.g, 2) +
-        Math.pow(c1.b - c2.b, 2)
-    );
 }
 
 // Function to select a template
@@ -496,13 +413,13 @@ const displayAccountsTable = async () => {
         ]
     });
 
-    // Define el límite de concurrencia
-    const limit = promiseLimit(5); // Puedes ajustar este valor
+    // Define the concurrency limit
+    const limit = promiseLimit(5); // Adjust this value as needed
 
-    // Arreglo para almacenar los resultados en el orden correcto
+    // Array to store results in the correct order
     const results = new Array(accountsData.length);
 
-    // Función para procesar cada cuenta
+    // Function to process each account
     const processAccount = async (i) => {
         const accountData = accountsData[i];
         const { id, queryId, proxy, userAgent } = accountData;
@@ -522,28 +439,58 @@ const displayAccountsTable = async () => {
         }
 
         try {
-            // Obtener estado de minería
+            // Get mining status
             const miningStatus = await performActionWithRetry(() => getMiningStatus(queryId, proxy, userAgent), i);
 
-            // Obtener PX Minados
+            if (miningStatus === null) {
+                // Cannot proceed with this account in this cycle
+                results[i] = [
+                    id || 'N/A'.red,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow
+                ];
+                return;
+            }
+
+            // Get PX Farmed
             const pxFarmed = miningStatus.userBalance !== undefined ? Math.floor(miningStatus.userBalance) : 'N/A';
 
-            // Obtener Oportunidades de Pintura
+            // Get Paint Chances
             const paintChances = miningStatus.charges !== undefined ? miningStatus.charges : 'N/A';
 
-            // Obtener información del usuario
+            // Get user info
             const userInfo = await performActionWithRetry(() => getUserInfo(queryId, proxy, userAgent), i);
+
+            if (userInfo === null) {
+                results[i] = [
+                    id || 'N/A'.red,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow,
+                    'Expired'.yellow
+                ];
+                return;
+            }
+
             const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
 
-            // Obtener otros datos del usuario
+            // Get other user data
             const league = userInfo.league || 'N/A';
             const squad = userInfo.squad && userInfo.squad.name ? userInfo.squad.name : 'N/A';
 
-            // Obtener IP y país
+            // Get IP and country
             const ip = await getPublicIP(proxy, userAgent);
             const country = await getGeolocation(ip);
 
-            // Añadir datos al resultado
+            // Add data to the result
             results[i] = [
                 id,
                 name,
@@ -555,7 +502,7 @@ const displayAccountsTable = async () => {
                 country || 'N/A'
             ];
 
-            // Introducir un pequeño retraso entre el procesamiento de cada cuenta para evitar sobrecarga
+            // Introduce a small delay between processing each account to prevent overload
             await delay(100);
         } catch (error) {
             results[i] = [
@@ -571,18 +518,11 @@ const displayAccountsTable = async () => {
         }
     };
 
-    if (processConcurrently) {
-        // Procesar cuentas concurrentemente
-        const accountPromises = accountsData.map((_, i) => limit(() => processAccount(i)));
-        await Promise.all(accountPromises);
-    } else {
-        // Procesar cuentas secuencialmente
-        for (let i = 0; i < accountsData.length; i++) {
-            await processAccount(i);
-        }
-    }
+    // Process accounts concurrently
+    const accountPromises = accountsData.map((_, i) => limit(() => processAccount(i)));
+    await Promise.all(accountPromises);
 
-    // Agregar resultados a la tabla
+    // Add results to the table
     results.forEach(row => {
         table.push(row);
     });
@@ -591,10 +531,13 @@ const displayAccountsTable = async () => {
 };
 
 // Function to set default template for assigned templates to each account
-async function setDefaultTemplateForAccounts(templateAssignments, paintConcurrently) {
+async function setDefaultTemplateForAccounts(templateAssignments) {
     console.log(`\n🔄 Setting default templates for all accounts.`.blue);
 
-    // Definir la función para procesar cada cuenta
+    // Use promise-limit to limit concurrency
+    const limit = promiseLimit(5); // Adjust the concurrency limit as needed
+
+    // Define the function to process each account
     const processAccount = async (i) => {
         let query_id = accountsData[i].queryId;
         const assignedTemplate = templateAssignments[i];
@@ -608,18 +551,25 @@ async function setDefaultTemplateForAccounts(templateAssignments, paintConcurren
         }
 
         try {
-            // Obtener información del usuario para obtener el nombre
+            // Get user info to obtain the name
             const userInfo = await performActionWithRetry(() => getUserInfo(query_id, proxy, userAgent), i);
+
+            if (userInfo === null) {
+                console.log(`⛔️ Cannot set default template for account ID ${i + 1} due to expired query_id. Will proceed in the next cycle.`.red);
+                return;
+            }
+
             const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
 
-            // Intentar establecer la plantilla predeterminada
+            // Try to set the default template
             const response = await setDefaultTemplate(query_id, proxy, userAgent, assignedTemplate.templateId);
-            if (response === 200 || response === 201) { // Asumiendo códigos de éxito
+
+            if (response === 200 || response === 201) { // Assuming success codes
                 console.log(`✅ ${assignedTemplate.name} Template Successfully set for ${name}`.green);
             }
         } catch (error) {
             if (error.response && [402, 403].includes(error.response.status)) {
-                // Obtener información del usuario para obtener el nombre
+                // Get user info to obtain the name
                 try {
                     const userInfo = await getUserInfo(query_id, proxy, userAgent);
                     const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
@@ -632,23 +582,12 @@ async function setDefaultTemplateForAccounts(templateAssignments, paintConcurren
             }
         }
 
-        // Delay de 10ms entre selecciones de plantilla
-        await delay(10);
-
-        // Introducir una pequeña demora entre el procesamiento de cuentas para prevenir solicitudes consecutivas rápidas
+        // Delay between accounts
         await delay(50);
     };
 
-    if (paintConcurrently) {
-        // Usar promise-limit para limitar la concurrencia
-        const limit = promiseLimit(5); // Ajusta el límite de concurrencia según tus necesidades
-        await Promise.all(accountsData.map((_, i) => limit(() => processAccount(i))));
-    } else {
-        // Procesar secuencialmente sin concurrencia
-        for (let i = 0; i < accountsData.length; i++) {
-            await processAccount(i);
-        }
-    }
+    // Always process accounts concurrently using promise-limit
+    await Promise.all(accountsData.map((_, i) => limit(() => processAccount(i))));
 }
 
 // Function to get the list of pixels to paint for a template
@@ -713,12 +652,16 @@ const startToPaint = async () => {
     const paintConcurrently = paintConcurrentlyInput === 'y';
 
     // Set the assigned templates as default for each account
-    await setDefaultTemplateForAccounts(templateAssignments, paintConcurrently);
+    await setDefaultTemplateForAccounts(templateAssignments);
 
     console.log('\n🔄 Starting the painting process with the selected template(s)'.blue);
 
     // Function to process the painting for each account
     const executePainting = async () => {
+        // Reload accountsData to get the latest queryId
+        const accountsFileData = fs.readFileSync(accountsPath, 'utf-8');
+        accountsData = JSON.parse(accountsFileData);
+
         // Store accounts that have painting opportunities
         const accountsWithCharges = [];
 
@@ -736,6 +679,12 @@ const startToPaint = async () => {
             let miningStatus;
             try {
                 miningStatus = await performActionWithRetry(() => getMiningStatus(query_id, proxy, userAgent), i);
+
+                if (miningStatus === null) {
+                    console.log(`⛔️ Cannot proceed with account ID ${i + 1} due to expired query_id. Will retry in the next cycle.`.red);
+                    continue;
+                }
+
                 accountCharges[i] = miningStatus.charges !== undefined ? miningStatus.charges : 0;
 
                 if (accountCharges[i] > 0) {
@@ -788,7 +737,12 @@ const startToPaint = async () => {
 
                 try {
                     // Get the color to paint using checkPixelColor
-                    const colorToPaint = await checkPixelColor(templateId, pixelId, proxy, userAgent);
+                    const colorToPaint = await performActionWithRetry(() => checkPixelColor(templateId, pixelId, proxy, userAgent), i);
+
+                    if (colorToPaint === null) {
+                        console.log(`⛔️ Cannot proceed with account ID ${i + 1} due to expired query_id. Will retry in the next cycle.`.red);
+                        return; // Exit processing for this account
+                    }
 
                     if (!colorToPaint) {
                         console.log(`⛔️ No color returned from checkPixelColor for Pixel ID ${pixelId}. Skipping.`.red);
@@ -804,7 +758,13 @@ const startToPaint = async () => {
 
                         try {
                             // Get the current color of the pixel using getPixelDetails
-                            const pixelDetails = await getPixelDetails(query_id, pixelId, proxy, userAgent);
+                            const pixelDetails = await performActionWithRetry(() => getPixelDetails(query_id, pixelId, proxy, userAgent), i);
+
+                            if (pixelDetails === null) {
+                                console.log(`⛔️ Cannot proceed with account ID ${i + 1} due to expired query_id. Will retry in the next cycle.`.red);
+                                return; // Exit processing for this account
+                            }
+
                             const currentColor = pixelDetails.pixel.color;
 
                             if (currentColor && currentColor.toUpperCase() === colorToPaint.toUpperCase()) {
@@ -822,7 +782,13 @@ const startToPaint = async () => {
                     }
 
                     // Proceed to paint the pixel using startRepaint
-                    const repaintResponse = await startRepaint(query_id, proxy, userAgent, colorToPaint, pixelId);
+                    const repaintResponse = await performActionWithRetry(() => startRepaint(query_id, proxy, userAgent, colorToPaint, pixelId), i);
+
+                    if (repaintResponse === null) {
+                        console.log(`⛔️ Cannot proceed with account ID ${i + 1} due to expired query_id. Will retry in the next cycle.`.red);
+                        return; // Exit processing for this account
+                    }
+
                     if (repaintResponse.balance !== undefined) {
                         const balance = parseFloat(repaintResponse.balance).toFixed(2);
                         console.log(`✅ Pixel (${gameX}, ${gameY}) painted with color ${colorToPaint}. Your Points are now: ${balance}`.green);
@@ -869,6 +835,11 @@ const startToPaint = async () => {
         console.log('🕒 The process will run every 10 minutes.'.yellow);
         setInterval(async () => {
             console.log('\n🔄 Starting scheduled painting execution.'.blue);
+
+            // Reload accountsData before each cycle
+            const accountsFileData = fs.readFileSync(accountsPath, 'utf-8');
+            accountsData = JSON.parse(accountsFileData);
+
             await executePainting();
         }, 10 * 60 * 1000); // 10 minutes in milliseconds
     }

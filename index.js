@@ -23,6 +23,8 @@ const {
     improvePaintReward,
     improveRechargeSpeed,
     improveEnergyLimit,
+    getPublicIP,
+    getGeolocation,
     getSquadRatingsBronze,
     checkLeagueBonusSilver,
     checkLeagueBonusGold,
@@ -31,11 +33,16 @@ const {
     checkMakePixelAvatar // Importar la nueva función
 } = require('./scripts/apis');
 
+// Import promise-limit for concurrency control
+const promiseLimit = require('promise-limit');
+
 // Directories and file paths
 const sessionsFolder = path.join(__dirname, 'sessions');
 const colorsPath = path.join(__dirname, 'colors.json');
 const accountsPath = path.join(__dirname, 'accounts.json');
 const telegramAPIsPath = path.join(__dirname, 'TelegramAPIs.json');
+const proxiesPath = path.join(__dirname, 'proxies.txt');
+const userAgentsPath = path.join(__dirname, 'user_agents.txt');
 
 // Create directories if they don't exist
 if (!fs.existsSync(sessionsFolder)) {
@@ -53,17 +60,6 @@ try {
     process.exit(1);
 }
 
-// Load accounts.json (tgWebAppData)
-let accountsWebAppData = [];
-
-try {
-    const accountsData = fs.readFileSync(accountsPath, 'utf-8');
-    accountsWebAppData = JSON.parse(accountsData);
-} catch (error) {
-    // If it doesn't exist, initialize it as an empty array
-    accountsWebAppData = [];
-}
-
 // Load TelegramAPIs.json
 let telegramAPIs = [];
 
@@ -75,12 +71,50 @@ try {
     process.exit(1);
 }
 
-// Map to store accounts and their clients
-const accounts = new Map();
+// Load proxies and user agents
+let proxies = [];
+let userAgents = [];
+
+try {
+    const proxiesData = fs.readFileSync(proxiesPath, 'utf-8');
+    proxies = proxiesData.split('\n').map(line => line.trim()).filter(line => line);
+} catch (error) {
+    console.error('Error reading proxies.txt:', error.message.red);
+    proxies = []; // Continue without proxies
+}
+
+try {
+    const userAgentsData = fs.readFileSync(userAgentsPath, 'utf-8');
+    userAgents = userAgentsData.split('\n').map(line => line.trim()).filter(line => line);
+    if (userAgents.length === 0) {
+        throw new Error('No user agents found in user_agents.txt');
+    }
+} catch (error) {
+    console.error('Error reading user_agents.txt:', error.message.red);
+    process.exit(1);
+}
 
 // Function to ask the user (using readline-sync)
 function askQuestion(question) {
     return readlineSync.question(question);
+}
+
+// Ask the user if they wish to use proxies
+const useProxiesInput = askQuestion('Do you wish to use Proxies in your accounts? (y/n): ').toLowerCase();
+const useProxies = useProxiesInput === 'y';
+
+// Map to store accounts and their clients
+const accounts = new Map();
+
+// Load accounts.json
+let accountsData = [];
+
+try {
+    const accountsFileData = fs.readFileSync(accountsPath, 'utf-8');
+    accountsData = JSON.parse(accountsFileData);
+} catch (error) {
+    // If it doesn't exist, initialize it as an empty array
+    accountsData = [];
 }
 
 // Function to log in with a phone number
@@ -138,15 +172,8 @@ async function loginWithSessionFile(account) {
     }
 }
 
-// Function to load all accounts
-async function loadAllAccounts() {
-    for (const account of telegramAPIs) {
-        await loginWithSessionFile(account);
-    }
-}
-
 // Function to request WebView and obtain the tgWebAppData
-async function requestWebViewForClient(client, phoneNumber) {
+async function requestWebViewForClient(client, phoneNumber, accountId) {
     const botPeer = '@notpx_bot';
     const url = 'https://app.notpx.app';
 
@@ -180,34 +207,60 @@ async function requestWebViewForClient(client, phoneNumber) {
 
         return tgWebAppData;
     } catch (error) {
-        console.error("Error requesting WebView:", error);
+        console.error(`Error requesting WebView for account ID ${accountId}:`, error.message);
         return null;
     }
 }
 
 // Function to update tgWebAppData
 async function updateWebAppData() {
-    accountsWebAppData = []; // Clear the in-memory variable
+    const accountsList = []; // Initialize an empty array
 
-    for (const account of telegramAPIs) {
-        const { phone_number } = account;
+    for (let i = 0; i < telegramAPIs.length; i++) {
+        const accountEntry = telegramAPIs[i];
+        const { id, phone_number } = accountEntry;
         const client = accounts.get(phone_number);
         if (!client) {
             console.error(`Client not found for account ${phone_number}`);
-            accountsWebAppData.push(null);
             continue;
         }
 
-        const tgWebAppData = await requestWebViewForClient(client, phone_number);
-        if (tgWebAppData) {
-            accountsWebAppData.push(tgWebAppData);
-        } else {
-            accountsWebAppData.push(null);
+        const tgWebAppData = await requestWebViewForClient(client, phone_number, id);
+        if (!tgWebAppData) {
+            continue;
         }
+
+        // Assign user agents (mandatory)
+        const userAgent = userAgents[i % userAgents.length];
+
+        // Assign proxies if useProxies is true
+        let proxy = null;
+        if (useProxies) {
+            proxy = proxies[i % proxies.length] || null;
+        }
+
+        // Store account data
+        accountsList.push({
+            id: id,
+            queryId: tgWebAppData,
+            proxy: proxy,
+            userAgent: userAgent
+        });
     }
 
-    fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
+    // Save accountsList to accounts.json
+    fs.writeFileSync(accountsPath, JSON.stringify(accountsList, null, 2), 'utf8');
     console.log('accounts.json updated with new tgWebAppData');
+
+    // Update accountsData in memory
+    accountsData = accountsList;
+}
+
+// Function to load all accounts
+async function loadAllAccounts() {
+    for (const account of telegramAPIs) {
+        await loginWithSessionFile(account);
+    }
 }
 
 // Function to clear the console and display the header
@@ -241,52 +294,82 @@ const displayAccountsTable = async () => {
             'PX Farmed'.red,
             'Paint Chances'.red,
             'League'.red,
-            'Squad'.red
+            'Squad'.red,
+            'IP'.red,
+            'Country'.red
         ]
     });
 
-    for (let i = 0; i < accountsWebAppData.length; i++) {
-        const tgWebAppData = accountsWebAppData[i];
-        if (!tgWebAppData) {
-            table.push([
-                i + 1,
+    // Define the concurrency limit
+    const limit = promiseLimit(5); // Adjust as needed
+
+    const results = new Array(accountsData.length);
+
+    const processAccount = async (i) => {
+        const accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+
+        if (!queryId) {
+            results[i] = [
+                id || 'N/A'.red,
                 'No tgWebAppData'.red,
                 'N/A'.red,
                 'N/A'.red,
                 'N/A'.red,
+                'N/A'.red,
+                'N/A'.red,
                 'N/A'.red
-            ]);
-            continue;
+            ];
+            return;
         }
-        try {
-            const userInfo = await getUserInfo(tgWebAppData);
-            const miningStatus = await getMiningStatus(tgWebAppData);
 
-            const name = userInfo.firstName.split(' ')[0];
-            const balance = userInfo.balance;
-            const charges = miningStatus.charges;
-            const league = userInfo.league;
+        try {
+            const userInfo = await getUserInfo(queryId, proxy, userAgent);
+            const miningStatus = await getMiningStatus(queryId, proxy, userAgent);
+
+            const name = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
+            const balance = userInfo.balance !== undefined ? userInfo.balance : 'N/A';
+            const charges = miningStatus.charges !== undefined ? miningStatus.charges : 'N/A';
+            const league = userInfo.league || 'N/A';
             const squadName = userInfo.squad && userInfo.squad.name ? userInfo.squad.name : 'N/A';
 
-            table.push([
-                i + 1,
+            // Get IP and country
+            const ip = await getPublicIP(proxy, userAgent);
+            const country = await getGeolocation(ip);
+
+            results[i] = [
+                id,
                 name,
                 balance,
                 charges,
                 league,
-                squadName
-            ]);
+                squadName,
+                ip || 'N/A',
+                country || 'N/A'
+            ];
+
         } catch (error) {
-            table.push([
-                i + 1,
+            results[i] = [
+                id || 'N/A'.red,
+                'Error'.red,
+                'Error'.red,
                 'Error'.red,
                 'Error'.red,
                 'Error'.red,
                 'Error'.red,
                 'Error'.red
-            ]);
+            ];
         }
-    }
+    };
+
+    // Process accounts concurrently
+    const accountPromises = accountsData.map((_, i) => limit(() => processAccount(i)));
+    await Promise.all(accountPromises);
+
+    // Add results to table
+    results.forEach(row => {
+        table.push(row);
+    });
 
     console.log(table.toString());
 };
@@ -309,10 +392,11 @@ async function performActionWithRetry(actionFunction, dataIndex) {
             const accountEntry = telegramAPIs[dataIndex];
             await loginWithSessionFile(accountEntry);
             const client = accounts.get(accountEntry.phone_number);
-            const newWebAppData = await requestWebViewForClient(client, accountEntry.phone_number);
+            const newWebAppData = await requestWebViewForClient(client, accountEntry.phone_number, accountEntry.id);
             if (newWebAppData) {
-                accountsWebAppData[dataIndex] = newWebAppData;
-                fs.writeFileSync(accountsPath, JSON.stringify(accountsWebAppData, null, 2), 'utf8');
+                // Update the in-memory variable and accounts.json
+                accountsData[dataIndex].queryId = newWebAppData;
+                fs.writeFileSync(accountsPath, JSON.stringify(accountsData, null, 2), 'utf8');
                 console.log('accounts.json updated with new tgWebAppData');
                 // Retry the action
                 await actionFunction();
@@ -329,19 +413,20 @@ async function performActionWithRetry(actionFunction, dataIndex) {
 const paintTheWorld = async () => {
     console.log('\n🔄 '.blue + "Let's Paint the World with all your Users".blue);
 
-    for (let i = 0; i < accountsWebAppData.length; i++) {
-        let tgWebAppData = accountsWebAppData[i];
-        if (!tgWebAppData) {
-            console.log(`\n⛔️ Account ID ${i + 1} does not have valid tgWebAppData.`.red);
+    for (let i = 0; i < accountsData.length; i++) {
+        let accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+        if (!queryId) {
+            console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
             continue;
         }
 
         const actionFunction = async () => {
             try {
-                const userInfo = await getUserInfo(tgWebAppData);
-                const miningStatus = await getMiningStatus(tgWebAppData);
+                const userInfo = await getUserInfo(queryId, proxy, userAgent);
+                const miningStatus = await getMiningStatus(queryId, proxy, userAgent);
 
-                const firstName = userInfo.firstName.split(' ')[0];
+                const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
                 const charges = miningStatus.charges;
 
                 if (charges === 0) {
@@ -356,7 +441,7 @@ const paintTheWorld = async () => {
                     const pixelId = getRandomPixelId();
 
                     try {
-                        const repaintResponse = await startRepaint(tgWebAppData, newColor, pixelId);
+                        const repaintResponse = await startRepaint(queryId, proxy, userAgent, newColor, pixelId);
                         if (repaintResponse.balance !== undefined) {
                             const balance = parseFloat(repaintResponse.balance).toFixed(2);
                             console.log(`✅ ${firstName} - Painted pixel ${pixelId} with color ${newColor} - Your points are now ${balance}.`.green);
@@ -372,7 +457,7 @@ const paintTheWorld = async () => {
                 }
 
             } catch (error) {
-                console.log(`⛔️ Error processing account ${i + 1}.`.red);
+                console.log(`⛔️ Error processing account ID ${id}.`.red);
             }
         };
 
@@ -384,24 +469,25 @@ const paintTheWorld = async () => {
 const claimRewards = async () => {
     console.log('\n⛏ '.yellow + "Claiming Rewards for all Users".yellow);
 
-    for (let i = 0; i < accountsWebAppData.length; i++) {
-        let tgWebAppData = accountsWebAppData[i];
-        if (!tgWebAppData) {
-            console.log(`\n⛔️ Account ID ${i + 1} does not have valid tgWebAppData.`.red);
+    for (let i = 0; i < accountsData.length; i++) {
+        let accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+        if (!queryId) {
+            console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
             continue;
         }
 
         const actionFunction = async () => {
             try {
-                const userInfo = await getUserInfo(tgWebAppData);
-                const firstName = userInfo.firstName.split(' ')[0];
+                const userInfo = await getUserInfo(queryId, proxy, userAgent);
+                const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
 
-                const claimResponse = await claimMiningRewards(tgWebAppData);
+                const claimResponse = await claimMiningRewards(queryId, proxy, userAgent);
                 const claimed = claimResponse.claimed;
 
                 console.log(`\n🎉 ${firstName} has successfully claimed ${claimed} in Mining Rewards.`.magenta);
             } catch (error) {
-                console.log(`⛔️ Could not claim rewards for account ID ${i + 1}.`.red);
+                console.log(`⛔️ Could not claim rewards for account ID ${id}.`.red);
             }
 
             // Wait 500ms between requests
@@ -441,24 +527,25 @@ const improveAccount = async () => {
             return;
     }
 
-    for (let i = 0; i < accountsWebAppData.length; i++) {
-        let tgWebAppData = accountsWebAppData[i];
-        if (!tgWebAppData) {
-            console.log(`\n⛔️ Account ID ${i + 1} does not have valid tgWebAppData.`.red);
+    for (let i = 0; i < accountsData.length; i++) {
+        let accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+        if (!queryId) {
+            console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
             continue;
         }
 
         const actionFunction = async () => {
             try {
-                const userInfo = await getUserInfo(tgWebAppData);
-                const firstName = userInfo.firstName.split(' ')[0];
+                const userInfo = await getUserInfo(queryId, proxy, userAgent);
+                const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
 
                 console.log(`\n⚙️  Improving ${improvementFunction} for ${firstName}.`.blue);
 
                 let improveResponse;
                 switch (improvementFunction) {
                     case 'Paint Reward':
-                        improveResponse = await improvePaintReward(tgWebAppData);
+                        improveResponse = await improvePaintReward(queryId, proxy, userAgent);
                         if (improveResponse.paintReward === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
@@ -466,7 +553,7 @@ const improveAccount = async () => {
                         }
                         break;
                     case 'Recharge Speed':
-                        improveResponse = await improveRechargeSpeed(tgWebAppData);
+                        improveResponse = await improveRechargeSpeed(queryId, proxy, userAgent);
                         if (improveResponse.reChargeSpeed === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
@@ -474,7 +561,7 @@ const improveAccount = async () => {
                         }
                         break;
                     case 'Energy Limit':
-                        improveResponse = await improveEnergyLimit(tgWebAppData);
+                        improveResponse = await improveEnergyLimit(queryId, proxy, userAgent);
                         if (improveResponse.energyLimit === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
@@ -486,7 +573,7 @@ const improveAccount = async () => {
                 }
 
             } catch (error) {
-                console.log(`⛔️ Error improving account ${i + 1}.`.red);
+                console.log(`⛔️ Error improving account ID ${id}.`.red);
             }
 
             // Wait 500ms between requests
@@ -501,17 +588,18 @@ const improveAccount = async () => {
 const claimLeagueRewards = async () => {
     console.log('\n🏆 '.yellow + "Claiming League Rewards for all Users".yellow);
 
-    for (let i = 0; i < accountsWebAppData.length; i++) {
-        let tgWebAppData = accountsWebAppData[i];
-        if (!tgWebAppData) {
-            console.log(`\n⛔️ Account ID ${i + 1} does not have valid tgWebAppData.`.red);
+    for (let i = 0; i < accountsData.length; i++) {
+        let accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+        if (!queryId) {
+            console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
             continue;
         }
 
         const actionFunction = async () => {
             try {
-                const userInfo = await getUserInfo(tgWebAppData);
-                const firstName = userInfo.firstName.split(' ')[0];
+                const userInfo = await getUserInfo(queryId, proxy, userAgent);
+                const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
                 const league = userInfo.league.toLowerCase(); // Assuming leagues are 'bronze', 'silver', 'gold', 'platinum'
 
                 let rewardsClaimed = false;
@@ -519,10 +607,10 @@ const claimLeagueRewards = async () => {
                 // Function to claim reward for a specific league
                 const claimLeague = async (leagueName, claimFunction) => {
                     try {
-                        const response = await claimFunction(tgWebAppData);
+                        const response = await claimFunction(queryId, proxy, userAgent);
                         if (response[Object.keys(response)[0]] === true) {
                             // Get updated balance
-                            const updatedUserInfo = await getUserInfo(tgWebAppData);
+                            const updatedUserInfo = await getUserInfo(queryId, proxy, userAgent);
                             const newPoints = updatedUserInfo.balance;
 
                             console.log(`✅ ${firstName} has claimed points for reaching the ${leagueName} league - Your points are now: ${newPoints}`.green);
@@ -556,9 +644,9 @@ const claimLeagueRewards = async () => {
 
                 // Claim points for painting 20 pixels
                 try {
-                    const paintResponse = await checkPaint20Pixels(tgWebAppData);
+                    const paintResponse = await checkPaint20Pixels(queryId, proxy, userAgent);
                     if (paintResponse.paint20pixels === true) {
-                        const updatedUserInfo = await getUserInfo(tgWebAppData);
+                        const updatedUserInfo = await getUserInfo(queryId, proxy, userAgent);
                         const newPoints = updatedUserInfo.balance;
                         console.log(`✅ ${firstName} has claimed points for painting the world 20 times - Your points are now: ${newPoints}`.green);
                         rewardsClaimed = true;
@@ -573,9 +661,9 @@ const claimLeagueRewards = async () => {
 
                 // Claim points for "Make Pixel Avatar" task
                 try {
-                    const avatarResponse = await checkMakePixelAvatar(tgWebAppData);
+                    const avatarResponse = await checkMakePixelAvatar(queryId, proxy, userAgent);
                     if (avatarResponse.makePixelAvatar === true) {
-                        const updatedUserInfo = await getUserInfo(tgWebAppData);
+                        const updatedUserInfo = await getUserInfo(queryId, proxy, userAgent);
                         const newPoints = updatedUserInfo.balance;
                         console.log(`✅ ${firstName} has successfully completed the "Make Pixel Avatar" task - Your points are now: ${newPoints}`.green);
                         rewardsClaimed = true;
@@ -593,7 +681,7 @@ const claimLeagueRewards = async () => {
                 }
 
             } catch (error) {
-                console.log(`❌ Error processing account ${i + 1}.`.red);
+                console.log(`❌ Error processing account ID ${id}.`.red);
             }
 
             // Wait 500ms between requests

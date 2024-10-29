@@ -1,15 +1,23 @@
 {
   "dependencies": {
+    "@faker-js/faker": "^9.0.3",
     "axios": "^1.7.7",
+    "bcrypt": "^5.1.1",
     "cli-table3": "^0.6.5",
     "colors": "^1.4.0",
     "console-clear": "^1.1.1",
     "dotenv": "^16.4.5",
+    "express": "^4.21.1",
     "figlet": "^1.7.0",
+    "geoip-lite": "^1.4.10",
     "jimp": "^0.16.1",
+    "p-limit": "^6.1.0",
+    "promise-limit": "^2.7.0",
     "puppeteer": "^23.5.3",
+    "random-useragent": "^0.5.0",
     "readline-sync": "^1.4.10",
     "sharp": "^0.33.5",
-    "telegram": "^2.25.11"
+    "telegram": "^2.25.11",
+    "user-agents": "^1.1.339"
   }
 }

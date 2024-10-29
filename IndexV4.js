@@ -1,4 +1,4 @@
-// index_paintworld.js
+// IndexV4.js
 
 // Imports and Initial Configurations
 const clear = require('console-clear');
@@ -20,19 +20,19 @@ const {
     getUserInfo,
     getMiningStatus,
     startRepaint,
-    getPixelDetails,
     setDefaultTemplate,
+    checkPixelColor,
     getPublicIP,
-    getGeolocation
+    getGeolocation,
+    claimMiningRewards,
+    improvePaintReward,
+    improveRechargeSpeed,
+    improveEnergyLimit,
+    getPixelDetails // Importamos la nueva función
 } = require('./scripts/apis');
 
 // Import promise-limit for concurrency control
 const promiseLimit = require('promise-limit');
-
-// Function to introduce a delay (ms)
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 // Directories and file paths
 const sessionsFolder = path.join(__dirname, 'sessions');
@@ -111,6 +111,10 @@ function askQuestion(question) {
     return readlineSync.question(question);
 }
 
+// Ask the user if they wish to process multiple accounts at the same time
+const processConcurrentlyInput = askQuestion('Do you wish to process multiple accounts at the same time? (y/n): ').toLowerCase();
+const processConcurrently = processConcurrentlyInput === 'y';
+
 // Ask the user if they wish to use proxies
 const useProxiesInput = askQuestion('Do you wish to use Proxies in your accounts? (y/n): ').toLowerCase();
 const useProxies = useProxiesInput === 'y';
@@ -118,22 +122,16 @@ const useProxies = useProxiesInput === 'y';
 // Map to store accounts and their clients
 const accounts = new Map();
 
-// Load accounts.json
-let accountsData = [];
-
-try {
-    const accountsFileData = fs.readFileSync(accountsPath, 'utf-8');
-    accountsData = JSON.parse(accountsFileData);
-} catch (error) {
-    // If it doesn't exist, initialize it as an empty array
-    accountsData = [];
-}
-
 // Global Running Flag
 let isRunning = false;
 
 // Array to track painting opportunities (charges) per account
 let accountCharges = [];
+
+// Function to introduce a delay (ms)
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // Function to log in with a phone number
 async function loginWithPhoneNumber(account) {
@@ -182,7 +180,7 @@ async function loginWithSessionFile(account) {
     try {
         const client = new TelegramClient(new StringSession(sessionData), Number(api_id), api_hash, { connectionRetries: 5 });
         await client.connect();
-        console.log(`Logged in using the session file for account ID: ${id}`);
+        console.log(colors.green(`Logged in using the session file for account ID: ${id}`));
         accounts.set(phone_number, client);
     } catch (error) {
         console.error(`Error logging in using the session file for account ID ${id}:`, error.message);
@@ -215,33 +213,33 @@ async function requestWebViewForClient(client, phoneNumber, accountId) {
             })
         );
 
-        // Extract the URL fragment
+        // Extraer el fragmento de la URL
         const urlFragment = result.url.split('#')[1];
 
-        // Parse the fragment as URL parameters
+        // Analizar el fragmento como parámetros de URL
         const params = new URLSearchParams(urlFragment);
 
-        // Get tgWebAppData without decoding it
+        // Obtener tgWebAppData sin decodificarlo
         const tgWebAppData = params.get('tgWebAppData');
 
         if (!tgWebAppData) {
-            console.error(`Could not extract tgWebAppData for account ${phoneNumber}`);
+            console.error(colors.red(`⛔️ Could not extract tgWebAppData for account ID ${accountId}`));
             return null;
         }
 
-        // tgWebAppData is URL-encoded, keep it that way
-        console.log(`Extracted tgWebAppData for account ${phoneNumber}: ${tgWebAppData}`);
+        // tgWebAppData está codificado en URL, mantenerlo así
+        console.log(colors.green(`✅ Extracted tgWebAppData for account ID ${accountId}: ${tgWebAppData}`));
 
         return tgWebAppData;
     } catch (error) {
-        console.error(`Error requesting WebView for account ID ${accountId}:`, error.message);
+        console.error(colors.red(`⛔️ Error requesting WebView for account ID ${accountId}: ${error.message}`));
         return null;
     }
 }
 
-// Function to update tgWebAppData
+// Function to Update tgWebAppData creating an account array
 async function updateWebAppData() {
-    const accountsList = []; // Initialize an empty array
+    const accountsList = [];
 
     for (let i = 0; i < telegramAPIs.length; i++) {
         const accountEntry = telegramAPIs[i];
@@ -249,36 +247,24 @@ async function updateWebAppData() {
         const client = accounts.get(phone_number);
         if (!client) {
             console.error(`Client not found for account ${phone_number}`);
-            accountsList.push({
-                id: id,
-                queryId: null,
-                proxy: useProxies ? (proxies[i % proxies.length] || null) : null,
-                userAgent: userAgents[i % userAgents.length] || 'Mozilla/5.0'
-            });
             continue;
         }
 
         const tgWebAppData = await requestWebViewForClient(client, phone_number, id);
         if (!tgWebAppData) {
-            accountsList.push({
-                id: id,
-                queryId: null,
-                proxy: useProxies ? (proxies[i % proxies.length] || null) : null,
-                userAgent: userAgents[i % userAgents.length] || 'Mozilla/5.0'
-            });
             continue;
         }
 
-        // Assign user agents (mandatory)
+        // Asignar user agents (obligatorio)
         const userAgent = userAgents[i % userAgents.length];
 
-        // Assign proxies if useProxies is true
+        // Asignar proxies si useProxies es verdadero
         let proxy = null;
         if (useProxies) {
             proxy = proxies[i % proxies.length] || null;
         }
 
-        // Store account data
+        // Almacenar los datos de la cuenta
         accountsList.push({
             id: id,
             queryId: tgWebAppData,
@@ -286,16 +272,24 @@ async function updateWebAppData() {
             userAgent: userAgent
         });
 
-        // Introduce a small delay between account updates to prevent rapid consecutive requests
+        // Introducir una pequeña demora entre actualizaciones de cuenta para prevenir solicitudes consecutivas rápidas
         await delay(50); // Añadimos una demora de 50ms
     }
 
-    // Save accountsList to accounts.json
+    // Guardar accountsList en accounts.json
     fs.writeFileSync(accountsPath, JSON.stringify(accountsList, null, 2), 'utf8');
     console.log('accounts.json updated with new tgWebAppData');
+}
 
-    // Update accountsData in memory
-    accountsData = accountsList;
+// Load accounts.json
+let accountsData = [];
+
+try {
+    const accountsFileData = fs.readFileSync(accountsPath, 'utf-8');
+    accountsData = JSON.parse(accountsFileData);
+} catch (error) {
+    // If it doesn't exist, initialize it as an empty array
+    accountsData = [];
 }
 
 // Function to clear the console and display the header
@@ -319,33 +313,35 @@ const pause = () => {
 
 // Function to handle errors and retry actions
 async function performActionWithRetry(actionFunction, dataIndex) {
-    try {
-        return await actionFunction();
-    } catch (error) {
-        console.error(`Error encountered: ${error.message}`.red);
+    let attempts = 0;
+    const maxAttempts = 10;
 
-        // Check if error has response and status
-        const status = error.response ? error.response.status : null;
+    while (attempts < maxAttempts) {
+        try {
+            return await actionFunction();
+        } catch (error) {
+            attempts++;
+            const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
+            if (isTimeout) {
+                // Timeout occurred, retry without additional prints
+                await delay(1000); // Wait 1 second before retrying
+                continue;
+            } else if (error.response && [401, 403].includes(error.response.status)) {
+                console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Renewing...`.yellow);
+                await renewQueryId(dataIndex);
 
-        if ([401, 403].includes(status)) {
-            console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Renewing...`.yellow);
-            await renewQueryId(dataIndex);
+                // Introduce a delay after renewing to prevent immediate retry
+                await delay(100);
 
-            // Introduce a delay after renewing to prevent immediate retry
-            await delay(100);
-
-            // Retry the action after renewing
-            try {
-                return await actionFunction();
-            } catch (retryError) {
-                console.error(`Retry failed: ${retryError.message}`.red);
-                throw retryError;
+                // Retry the action after renewing
+                continue;
+            } else {
+                // Unhandled error, throw
+                throw error;
             }
-        } else {
-            console.error(`Unhandled error: ${error.message}`.red);
-            throw error;
         }
     }
+    throw new Error(`Failed after ${maxAttempts} attempts`);
 }
 
 // Function to renew the query_id for a specific account
@@ -381,95 +377,6 @@ async function renewQueryId(dataIndex) {
         console.error(`Failed to renew query_id for account ID ${id}: ${error.message}`.red);
     }
 }
-
-// Function to display the accounts table
-const displayAccountsTable = async () => {
-    const table = new Table({
-        head: [
-            'ID'.red,
-            'Name'.red,
-            'PX Farmed'.red,
-            'Paint Chances'.red,
-            'League'.red,
-            'Squad'.red,
-            'IP'.red,
-            'Country'.red
-        ]
-    });
-
-    // Define the concurrency limit
-    const limit = promiseLimit(5); // Adjust as needed
-
-    const results = new Array(accountsData.length);
-
-    const processAccount = async (i) => {
-        const accountData = accountsData[i];
-        const { id, queryId, proxy, userAgent } = accountData;
-
-        if (!queryId) {
-            results[i] = [
-                id || 'N/A'.red,
-                'No tgWebAppData'.red,
-                'N/A'.red,
-                'N/A'.red,
-                'N/A'.red,
-                'N/A'.red,
-                'N/A'.red,
-                'N/A'.red
-            ];
-            return;
-        }
-
-        try {
-            const userInfo = await getUserInfo(queryId, proxy, userAgent);
-            const miningStatus = await getMiningStatus(queryId, proxy, userAgent);
-
-            const name = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
-            const balance = userInfo.balance !== undefined ? userInfo.balance : 'N/A';
-            const charges = miningStatus.charges !== undefined ? miningStatus.charges : 'N/A';
-            const league = userInfo.league || 'N/A';
-            const squadName = userInfo.squad && userInfo.squad.name ? userInfo.squad.name : 'N/A';
-
-            // Get IP and country
-            const ip = await getPublicIP(proxy, userAgent);
-            const country = await getGeolocation(ip);
-
-            results[i] = [
-                id,
-                name,
-                balance,
-                charges,
-                league,
-                squadName,
-                ip || 'N/A',
-                country || 'N/A'
-            ];
-
-        } catch (error) {
-            results[i] = [
-                id || 'N/A'.red,
-                'Error'.red,
-                'Error'.red,
-                'Error'.red,
-                'Error'.red,
-                'Error'.red,
-                'Error'.red,
-                'Error'.red
-            ];
-        }
-    };
-
-    // Process accounts concurrently
-    const accountPromises = accountsData.map((_, i) => limit(() => processAccount(i)));
-    await Promise.all(accountPromises);
-
-    // Add results to table
-    results.forEach(row => {
-        table.push(row);
-    });
-
-    console.log(table.toString());
-};
 
 // Function to load template image and create a color matrix
 async function loadTemplateImage(template) {
@@ -574,18 +481,130 @@ const selectTemplate = () => {
     return selectedTemplate;
 };
 
+// Function to display the accounts table
+const displayAccountsTable = async () => {
+    const table = new Table({
+        head: [
+            'ID'.red,
+            'Name'.red,
+            'PX Farmed'.red,
+            'Paint Chances'.red,
+            'League'.red,
+            'Squad'.red,
+            'IP'.red,
+            'Country'.red
+        ]
+    });
+
+    // Define el límite de concurrencia
+    const limit = promiseLimit(5); // Puedes ajustar este valor
+
+    // Arreglo para almacenar los resultados en el orden correcto
+    const results = new Array(accountsData.length);
+
+    // Función para procesar cada cuenta
+    const processAccount = async (i) => {
+        const accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+
+        if (!queryId) {
+            results[i] = [
+                id || 'N/A'.red,
+                'N/A'.red,
+                'N/A'.red,
+                'N/A'.red,
+                'N/A'.red,
+                'N/A'.red,
+                'N/A'.red,
+                'N/A'.red
+            ];
+            return;
+        }
+
+        try {
+            // Obtener estado de minería
+            const miningStatus = await performActionWithRetry(() => getMiningStatus(queryId, proxy, userAgent), i);
+
+            // Obtener PX Minados
+            const pxFarmed = miningStatus.userBalance !== undefined ? Math.floor(miningStatus.userBalance) : 'N/A';
+
+            // Obtener Oportunidades de Pintura
+            const paintChances = miningStatus.charges !== undefined ? miningStatus.charges : 'N/A';
+
+            // Obtener información del usuario
+            const userInfo = await performActionWithRetry(() => getUserInfo(queryId, proxy, userAgent), i);
+            const name = userInfo.firstName ? userInfo.firstName.trim().split(/\s+/)[0] : 'N/A';
+
+            // Obtener otros datos del usuario
+            const league = userInfo.league || 'N/A';
+            const squad = userInfo.squad && userInfo.squad.name ? userInfo.squad.name : 'N/A';
+
+            // Obtener IP y país
+            const ip = await getPublicIP(proxy, userAgent);
+            const country = await getGeolocation(ip);
+
+            // Añadir datos al resultado
+            results[i] = [
+                id,
+                name,
+                pxFarmed,
+                paintChances,
+                league,
+                squad,
+                ip || 'N/A',
+                country || 'N/A'
+            ];
+
+            // Introducir un pequeño retraso entre el procesamiento de cada cuenta para evitar sobrecarga
+            await delay(100);
+        } catch (error) {
+            results[i] = [
+                id || 'N/A'.red,
+                'Error'.red,
+                'Error'.red,
+                'Error'.red,
+                'Error'.red,
+                'Error'.red,
+                'Error'.red,
+                'Error'.red
+            ];
+        }
+    };
+
+    if (processConcurrently) {
+        // Procesar cuentas concurrentemente
+        const accountPromises = accountsData.map((_, i) => limit(() => processAccount(i)));
+        await Promise.all(accountPromises);
+    } else {
+        // Procesar cuentas secuencialmente
+        for (let i = 0; i < accountsData.length; i++) {
+            await processAccount(i);
+        }
+    }
+
+    // Agregar resultados a la tabla
+    results.forEach(row => {
+        table.push(row);
+    });
+
+    console.log(table.toString());
+};
+
 // Function to set default template for assigned templates to each account
-async function setDefaultTemplateForAccounts(templateAssignments) {
+async function setDefaultTemplateForAccounts(templateAssignments, paintConcurrently) {
     console.log(`\n🔄 Setting default templates for all accounts.`.blue);
-    for (let i = 0; i < accountsData.length; i++) {
+
+    // Definir la función para procesar cada cuenta
+    const processAccount = async (i) => {
         let query_id = accountsData[i].queryId;
         const assignedTemplate = templateAssignments[i];
-        const account = telegramAPIs[i];
-        const { proxy, userAgent } = accountsData[i];
+        const account = accountsData[i];
+        const proxy = account.proxy;
+        const userAgent = account.userAgent;
 
         if (!query_id) {
             console.log(`\n⛔️ Account ID ${i + 1} does not have a valid tgWebAppData.`.red);
-            continue;
+            return;
         }
 
         try {
@@ -618,15 +637,40 @@ async function setDefaultTemplateForAccounts(templateAssignments) {
 
         // Introducir una pequeña demora entre el procesamiento de cuentas para prevenir solicitudes consecutivas rápidas
         await delay(50);
+    };
+
+    if (paintConcurrently) {
+        // Usar promise-limit para limitar la concurrencia
+        const limit = promiseLimit(5); // Ajusta el límite de concurrencia según tus necesidades
+        await Promise.all(accountsData.map((_, i) => limit(() => processAccount(i))));
+    } else {
+        // Procesar secuencialmente sin concurrencia
+        for (let i = 0; i < accountsData.length; i++) {
+            await processAccount(i);
+        }
     }
 }
 
+// Function to get the list of pixels to paint for a template
+const getPixelsToPaint = (template) => {
+    const { minX, minY, maxX, maxY } = template;
+    const pixelsToPaint = [];
+
+    for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+            const pixelId = y * 1000 + x;
+            pixelsToPaint.push({
+                x: x,
+                y: y,
+                pixelId: pixelId
+            });
+        }
+    }
+    return pixelsToPaint;
+};
+
 // Function to start the painting process
 const startToPaint = async () => {
-    // Ask the user if they wish to paint with multiple users at the same time
-    const paintConcurrentlyInput = askQuestion('Do you wish to paint with multiple users at the same time? (y/n): ').toLowerCase();
-    const paintConcurrently = paintConcurrentlyInput === 'y';
-
     // Ask the user if they wish to use random templates
     const useRandomTemplatesInput = askQuestion('Do you wish to use Random Templates for each user? (y/n): ').toLowerCase();
     const useRandomTemplates = useRandomTemplatesInput === 'y';
@@ -660,51 +704,20 @@ const startToPaint = async () => {
         isRunning = true; // Set the global flag
     }
 
+    // Ask the user if they wish to double verify pixel colors
+    const doubleVerifyInput = askQuestion('Do you wish to Double verify Pixel Colors? (y/n): ').toLowerCase();
+    const doubleVerify = doubleVerifyInput === 'y';
+
+    // Ask the user if they wish to paint with various users at same time
+    const paintConcurrentlyInput = askQuestion('Do you wish to paint with various users at same time? (y/n): ').toLowerCase();
+    const paintConcurrently = paintConcurrentlyInput === 'y';
+
     // Set the assigned templates as default for each account
-    await setDefaultTemplateForAccounts(templateAssignments);
+    await setDefaultTemplateForAccounts(templateAssignments, paintConcurrently);
 
     console.log('\n🔄 Starting the painting process with the selected template(s)'.blue);
 
-    // Object to track the progress of each template
-    const templateProgress = {};
-
-    // Function to get the list of pixels to paint for a template
-    const getPixelsToPaint = (template) => {
-        const colorMatrix = templateColorMatrices[template.templateId];
-        const { minX, minY } = template;
-
-        const pixelsToPaint = [];
-
-        for (let y = 0; y < colorMatrix.length; y++) {
-            for (let x = 0; x < colorMatrix[y].length; x++) {
-                const color = colorMatrix[y][x];
-                if (color) {
-                    const gameX = minX + x;
-                    const gameY = minY + y;
-                    const pixelId = gameY * 1000 + gameX;
-
-                    // Map image color to closest game color
-                    const targetColor = findClosestColor(color);
-
-                    pixelsToPaint.push({
-                        x: gameX,
-                        y: gameY,
-                        pixelId: pixelId,
-                        targetColor: targetColor
-                    });
-                }
-            }
-        }
-
-        return pixelsToPaint;
-    };
-
-    // Load template images and create color matrices
-    const templateColorMatrices = {};
-    for (const template of templates) {
-        templateColorMatrices[template.templateId] = await loadTemplateImage(template);
-    }
-
+    // Function to process the painting for each account
     const executePainting = async () => {
         // Store accounts that have painting opportunities
         const accountsWithCharges = [];
@@ -712,7 +725,9 @@ const startToPaint = async () => {
         // First, check and collect accounts with painting opportunities
         for (let i = 0; i < accountsData.length; i++) {
             let query_id = accountsData[i].queryId;
-            const { proxy, userAgent } = accountsData[i];
+            const proxy = accountsData[i].proxy;
+            const userAgent = accountsData[i].userAgent;
+
             if (!query_id) {
                 continue;
             }
@@ -740,7 +755,7 @@ const startToPaint = async () => {
             }
 
             // Introduce a small delay between requests
-            await delay(50);
+            await delay(300);
         }
 
         // If no accounts have charges, display a message and exit
@@ -757,36 +772,60 @@ const startToPaint = async () => {
             // Get the pixels to paint for this template
             const pixelsToPaint = getPixelsToPaint(template);
 
-            // Shuffle pixelsToPaint to randomize the order
+            // Shuffle pixelsToPaint to randomize pixel selection
             const shuffledPixels = pixelsToPaint.sort(() => Math.random() - 0.5);
 
             // Initialize an index to keep track of processed pixels
             let currentPixelIndex = 0;
 
             console.log(`\n🎨 Processing template: ${template.name} (ID: ${templateId}) for account ID ${i + 1}`);
-            console.log(`✅ Account ID ${i + 1} has ${accountCharges[i]} painting opportunities remaining.`);
 
             while (accountCharges[i] > 0 && currentPixelIndex < shuffledPixels.length) {
                 const pixelData = shuffledPixels[currentPixelIndex];
-                const { x: gameX, y: gameY, pixelId, targetColor } = pixelData;
+                const { x: gameX, y: gameY, pixelId } = pixelData;
+
+                console.log(`Using pixel ID: ${pixelId}`);
 
                 try {
-                    // Proceed to paint the pixel using getPixelDetails and startRepaint
-                    const pixelDetails = await performActionWithRetry(() => getPixelDetails(query_id, pixelId, proxy, userAgent), i);
-                    const currentColor = pixelDetails.pixel.color;
+                    // Get the color to paint using checkPixelColor
+                    const colorToPaint = await checkPixelColor(templateId, pixelId, proxy, userAgent);
 
-                    if (currentColor && currentColor.toUpperCase() === targetColor.toUpperCase()) {
-                        console.log(`ℹ️ Pixel (${gameX}, ${gameY}) already has the correct color.`.cyan);
+                    if (!colorToPaint) {
+                        console.log(`⛔️ No color returned from checkPixelColor for Pixel ID ${pixelId}. Skipping.`.red);
                         currentPixelIndex += 1;
                         await delay(300);
                         continue;
                     }
 
+                    // If doubleVerify is true, verify the current color of the pixel
+                    if (doubleVerify) {
+                        // Introduce a delay of 100ms between checkPixelColor and getPixelDetails
+                        await delay(100);
+
+                        try {
+                            // Get the current color of the pixel using getPixelDetails
+                            const pixelDetails = await getPixelDetails(query_id, pixelId, proxy, userAgent);
+                            const currentColor = pixelDetails.pixel.color;
+
+                            if (currentColor && currentColor.toUpperCase() === colorToPaint.toUpperCase()) {
+                                console.log(`ℹ️ Pixel (${gameX}, ${gameY}) already has the correct color.`.cyan);
+                                currentPixelIndex += 1;
+                                await delay(300);
+                                continue;
+                            }
+                        } catch (error) {
+                            console.log(`⛔️ Error getting pixel details for Pixel ID ${pixelId}: ${error.message}`.red);
+                            currentPixelIndex += 1;
+                            await delay(300);
+                            continue;
+                        }
+                    }
+
                     // Proceed to paint the pixel using startRepaint
-                    const repaintResponse = await performActionWithRetry(() => startRepaint(query_id, proxy, userAgent, targetColor, pixelId), i);
+                    const repaintResponse = await startRepaint(query_id, proxy, userAgent, colorToPaint, pixelId);
                     if (repaintResponse.balance !== undefined) {
                         const balance = parseFloat(repaintResponse.balance).toFixed(2);
-                        console.log(`✅ Pixel (${gameX}, ${gameY}) painted with color ${targetColor}. Your Points are now: ${balance}`.green);
+                        console.log(`✅ Pixel (${gameX}, ${gameY}) painted with color ${colorToPaint}. Your Points are now: ${balance}`.green);
                         accountCharges[i] -= 1; // Decrement painting opportunities
                     } else {
                         console.log(`⛔️ Could not repaint Pixel (${gameX}, ${gameY}).`.red);
@@ -808,7 +847,6 @@ const startToPaint = async () => {
             console.log(`✅ Finished processing for account ID ${i + 1}. Remaining opportunities: ${accountCharges[i]}`.green);
         };
 
-        // Process the accounts with or without concurrency according to user choice
         if (paintConcurrently) {
             // Use promise-limit to limit concurrency
             const limit = promiseLimit(5); // Adjust concurrency limit as needed
@@ -855,7 +893,7 @@ async function main() {
             if (!isRunning) {
                 // If not running continuously, return to main menu
                 await pause();
-                await main();
+                main();
             } else {
                 // If running continuously, do not return to main menu
                 // Inform the user that the process is running
@@ -869,7 +907,7 @@ async function main() {
         default:
             console.log('Invalid option. Please try again.'.red);
             await pause();
-            await main();
+            main();
             break;
     }
 }

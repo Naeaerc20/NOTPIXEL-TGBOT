@@ -1,6 +1,17 @@
 [
     {
         "id": 1,
+        "name": "Just Anoter Guy",
+        "templateId": 1675295056,
+        "minPixelId": 17018,
+        "maxPixelId": 144145,
+        "minX": 17,
+        "maxX": 144,
+        "minY": 17,
+        "maxY": 144
+    },
+    {
+        "id": 2,
         "name": "OKX",
         "templateId": 1972552043,
         "minPixelId": 271112,
@@ -9,27 +20,5 @@
         "maxX": 238,
         "minY": 271,
         "maxY": 398
-    },
-    {
-        "id": 2,
-        "name": "MAJOR",
-        "templateId": 1709562088,
-        "minPixelId": 181108,
-        "maxPixelId": 308235,
-        "minX": 107,
-        "maxX": 234,
-        "minY": 181,
-        "maxY": 308
-    },
-    {
-        "id": 3,
-        "name": "COW",
-        "templateId": 6488960520,
-        "minPixelId": 914657,
-        "maxPixelId": 977720,
-        "minX": 656,
-        "maxX": 719,
-        "minY": 914,
-        "maxY": 977
     }
 ]

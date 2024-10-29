@@ -22,7 +22,7 @@ To use it you can contact me through Twitter (x.com/naeaex_dev) This code will h
 
 # Addresses:
 
-ETH (EVM): 0x0c5871732fC0163FfEDe082b817a1CB60340A115
+ETH (EVM): 0x3771563CCF187F4C8B0bD0Cbc85375AF5E47F98B
 
 SOL (SVM): 8WJ6VrPwBJCYsSSUUYg5U6uPivqnRVfDEpLc6ep5mW5v 
 

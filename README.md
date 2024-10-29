@@ -5,7 +5,7 @@ A tool that will help you to farm automatically NOTPIXEL Telegram Airdrop Bot.
 
 # index.js
 
-Now you have the option to make calls and manage multiple accounts with proxies included. Some small bugs still need to be fixed but it Will run without problema
+Now you have the option to make calls and manage multiple accounts with proxies included. Some small bugs still need to be fixed but it will run without problem
 
 # index_paintworld.js
 
@@ -21,7 +21,9 @@ It has the option of double color verification if wished to avoid loss of painti
 To use it you can contact me through Twitter (x.com/naeaex_dev) This code will have a small and unique cost of 15 USD. You can make your transaction to one of the following addresses and send me the Hash, I will proceed to verify it and send you your own OTP for the correct functioning of it. (we can also make a deal via PM) You will also be able to get my personal support in any problem presented.
 
 # Addresses:
+
 ETH (EVM): 0x0c5871732fC0163FfEDe082b817a1CB60340A115
+
 SOL (SVM): 8WJ6VrPwBJCYsSSUUYg5U6uPivqnRVfDEpLc6ep5mW5v 
 
 # UserAgentGenerator.js

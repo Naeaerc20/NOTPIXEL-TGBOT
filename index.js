@@ -30,7 +30,10 @@ const {
     checkLeagueBonusGold,
     checkLeagueBonusPlatinum,
     checkPaint20Pixels,
-    checkMakePixelAvatar // Importar la nueva función
+    checkMakePixelAvatar, // Importar la nueva función
+    completeBoinkTask,
+    completeJettonTask,
+    completePixelInNameTask
 } = require('./scripts/apis');
 
 // Import promise-limit for concurrency control
@@ -123,7 +126,7 @@ async function loginWithPhoneNumber(account) {
     const stringSession = new StringSession('');
     const client = new TelegramClient(stringSession, Number(api_id), api_hash, { connectionRetries: 5 });
 
-    console.log(`Logging in with phone number: ${phone_number}`);
+    console.log(`Logging in with phone number: ${phone_number}\n`);
 
     await client.start({
         phoneNumber: async () => phone_number,
@@ -132,13 +135,13 @@ async function loginWithPhoneNumber(account) {
         onError: (error) => console.error("Error:", error),
     });
 
-    console.log('Successfully logged in');
+    console.log('Successfully logged in\n');
 
     const sessionString = client.session.save();
     const sessionFile = path.join(sessionsFolder, `${id}_session`);
 
     fs.writeFileSync(sessionFile, sessionString, 'utf8');
-    console.log(`Session saved in ${sessionFile}`);
+    console.log(`Session saved in ${sessionFile}\n`);
     accounts.set(phone_number, client);
 }
 
@@ -148,7 +151,7 @@ async function loginWithSessionFile(account) {
     const sessionFile = path.join(sessionsFolder, `${id}_session`);
 
     if (!fs.existsSync(sessionFile)) {
-        console.log(`Session file for account ID ${id} not found.`);
+        console.log(`Session file for account ID ${id} not found.\n`);
         await loginWithPhoneNumber(account);
         return;
     }
@@ -156,7 +159,7 @@ async function loginWithSessionFile(account) {
     const sessionData = fs.readFileSync(sessionFile, 'utf-8');
 
     if (!sessionData || sessionData.trim() === '') {
-        console.log(`The session file for account ID ${id} is empty or invalid.`);
+        console.log(`The session file for account ID ${id} is empty or invalid.\n`);
         await loginWithPhoneNumber(account);
         return;
     }
@@ -164,10 +167,10 @@ async function loginWithSessionFile(account) {
     try {
         const client = new TelegramClient(new StringSession(sessionData), Number(api_id), api_hash, { connectionRetries: 5 });
         await client.connect();
-        console.log(`Logged in using the session file for account ID: ${id}`);
+        console.log(`Logged in using the session file for account ID: ${id}\n`);
         accounts.set(phone_number, client);
     } catch (error) {
-        console.error(`Error logging in using the session file for account ID ${id}:`, error.message);
+        console.error(`Error logging in using the session file for account ID ${id}:`, error.message, '\n');
         await loginWithPhoneNumber(account);
     }
 }
@@ -198,16 +201,16 @@ async function requestWebViewForClient(client, phoneNumber, accountId) {
         const tgWebAppData = params.get('tgWebAppData');
 
         if (!tgWebAppData) {
-            console.error(`Could not extract tgWebAppData for account ${phoneNumber}`);
+            console.error(`Could not extract tgWebAppData for account ${phoneNumber}\n`);
             return null;
         }
 
         // tgWebAppData is URL-encoded, keep it that way
-        console.log(`Extracted tgWebAppData for account ${phoneNumber}: ${tgWebAppData}`);
+        console.log(`🔑 Extracted tgWebAppData for account ${phoneNumber}: ${tgWebAppData}\n`);
 
         return tgWebAppData;
     } catch (error) {
-        console.error(`Error requesting WebView for account ID ${accountId}:`, error.message);
+        console.error(`Error requesting WebView for account ID ${accountId}:`, error.message.red, '\n');
         return null;
     }
 }
@@ -221,7 +224,7 @@ async function updateWebAppData() {
         const { id, phone_number } = accountEntry;
         const client = accounts.get(phone_number);
         if (!client) {
-            console.error(`Client not found for account ${phone_number}`);
+            console.error(`Client not found for account ${phone_number}\n`.red);
             continue;
         }
 
@@ -250,7 +253,7 @@ async function updateWebAppData() {
 
     // Save accountsList to accounts.json
     fs.writeFileSync(accountsPath, JSON.stringify(accountsList, null, 2), 'utf8');
-    console.log('accounts.json updated with new tgWebAppData');
+    console.log('📄 accounts.json updated with new tgWebAppData\n');
 
     // Update accountsData in memory
     accountsData = accountsList;
@@ -272,6 +275,7 @@ const displayHeader = () => {
         verticalLayout: 'default'
     });
     console.log(colors.blue(banner));
+    console.log('');
 };
 
 // Function to select a random color
@@ -280,7 +284,7 @@ const getRandomColor = () => {
     return colorsList[randomIndex][0]; // Returns the color code
 };
 
-// Function to generate a random pixelId between 1 and 1,000,000
+// Function to generate a random pixelId between 1 y 1,000,000
 const getRandomPixelId = () => {
     return Math.floor(Math.random() * 1000000) + 1;
 };
@@ -372,6 +376,7 @@ const displayAccountsTable = async () => {
     });
 
     console.log(table.toString());
+    console.log('');
 };
 
 // Function to pause execution until the user presses Enter
@@ -382,13 +387,13 @@ const pause = () => {
     });
 };
 
-// Function to handle errors and retry actions
+// Function to handle errores y reintentos de acciones
 async function performActionWithRetry(actionFunction, dataIndex) {
     try {
         await actionFunction();
     } catch (error) {
         if (error.response && [401, 403].includes(error.response.status)) {
-            console.log(`tgWebAppData for account ID ${dataIndex + 1} expired. Updating...`);
+            console.log(`\ntgWebAppData for account ID ${dataIndex + 1} expired. Updating...\n`.yellow);
             const accountEntry = telegramAPIs[dataIndex];
             await loginWithSessionFile(accountEntry);
             const client = accounts.get(accountEntry.phone_number);
@@ -397,11 +402,11 @@ async function performActionWithRetry(actionFunction, dataIndex) {
                 // Update the in-memory variable and accounts.json
                 accountsData[dataIndex].queryId = newWebAppData;
                 fs.writeFileSync(accountsPath, JSON.stringify(accountsData, null, 2), 'utf8');
-                console.log('accounts.json updated with new tgWebAppData');
+                console.log('📄 accounts.json updated with new tgWebAppData\n'.green);
                 // Retry the action
                 await actionFunction();
             } else {
-                console.error(`Could not update tgWebAppData for account ID ${accountEntry.id}`);
+                console.error(`Could not update tgWebAppData for account ID ${accountEntry.id}\n`.red);
             }
         } else {
             throw error;
@@ -411,13 +416,14 @@ async function performActionWithRetry(actionFunction, dataIndex) {
 
 // Option 1: Paint the World
 const paintTheWorld = async () => {
-    console.log('\n🔄 '.blue + "Let's Paint the World with all your Users".blue);
+    console.log('\n🔄 '.blue + "Let's Paint the World with all your Users".blue + '\n');
 
     for (let i = 0; i < accountsData.length; i++) {
         let accountData = accountsData[i];
         const { id, queryId, proxy, userAgent } = accountData;
         if (!queryId) {
             console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
+            console.log('');
             continue;
         }
 
@@ -467,13 +473,14 @@ const paintTheWorld = async () => {
 
 // Option 2: Claim Mining Rewards
 const claimRewards = async () => {
-    console.log('\n⛏ '.yellow + "Claiming Rewards for all Users".yellow);
+    console.log('\n⛏ '.yellow + "Claiming Rewards for all Users".yellow + '\n');
 
     for (let i = 0; i < accountsData.length; i++) {
         let accountData = accountsData[i];
         const { id, queryId, proxy, userAgent } = accountData;
         if (!queryId) {
             console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
+            console.log('');
             continue;
         }
 
@@ -549,7 +556,7 @@ const improveAccount = async () => {
                         if (improveResponse.paintReward === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
-                            console.log(`⛔️ ${firstName} cannot improve this feature now. Acquire more points and try again.`.red);
+                            console.log(`⛔️ ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.red);
                         }
                         break;
                     case 'Recharge Speed':
@@ -557,7 +564,7 @@ const improveAccount = async () => {
                         if (improveResponse.reChargeSpeed === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
-                            console.log(`⛔️ ${firstName} cannot improve this feature now. Acquire more points and try again.`.red);
+                            console.log(`⛔️ ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.red);
                         }
                         break;
                     case 'Energy Limit':
@@ -565,7 +572,7 @@ const improveAccount = async () => {
                         if (improveResponse.energyLimit === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
-                            console.log(`⛔️ ${firstName} cannot improve this feature now. Acquire more points and try again.`.red);
+                            console.log(`⛔️ ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.red);
                         }
                         break;
                     default:
@@ -575,9 +582,6 @@ const improveAccount = async () => {
             } catch (error) {
                 console.log(`⛔️ Error improving account ID ${id}.`.red);
             }
-
-            // Wait 500ms between requests
-            await new Promise(res => setTimeout(res, 500));
         };
 
         await performActionWithRetry(actionFunction, i);
@@ -586,7 +590,7 @@ const improveAccount = async () => {
 
 // Option 4: Claim Rewards for Leagues
 const claimLeagueRewards = async () => {
-    console.log('\n🏆 '.yellow + "Claiming League Rewards for all Users".yellow);
+    console.log('\n🏆 '.yellow + "Claiming League Rewards for all Users".yellow + '\n');
 
     for (let i = 0; i < accountsData.length; i++) {
         let accountData = accountsData[i];
@@ -600,7 +604,7 @@ const claimLeagueRewards = async () => {
             try {
                 const userInfo = await getUserInfo(queryId, proxy, userAgent);
                 const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
-                const league = userInfo.league.toLowerCase(); // Assuming leagues are 'bronze', 'silver', 'gold', 'platinum'
+                const league = userInfo.league.toLowerCase();
 
                 let rewardsClaimed = false;
 
@@ -609,16 +613,14 @@ const claimLeagueRewards = async () => {
                     try {
                         const response = await claimFunction(queryId, proxy, userAgent);
                         if (response[Object.keys(response)[0]] === true) {
-                            // Get updated balance
                             const updatedUserInfo = await getUserInfo(queryId, proxy, userAgent);
                             const newPoints = updatedUserInfo.balance;
-
                             console.log(`✅ ${firstName} has claimed points for reaching the ${leagueName} league - Your points are now: ${newPoints}`.green);
                             rewardsClaimed = true;
                         }
                     } catch (error) {
-                        if (error.response && [400].includes(error.response.status)) {
-                            console.log(`❌ ${firstName} had a problem while claiming rewards for the ${leagueName} league. Please try again later.`.red);
+                        if (error.response && error.response.status === 400) {
+                            console.log(`❌ ${firstName} has already claimed rewards for the ${leagueName} league or needs to do it manually.`.red);
                         } else {
                             console.log(`❌ ${firstName} had a problem while claiming rewards for the ${leagueName} league. Please try again later.`.red);
                         }
@@ -626,15 +628,15 @@ const claimLeagueRewards = async () => {
                 };
 
                 // Claim rewards based on the user's league
-                if (league === 'bronze' || league === 'silver' || league === 'gold' || league === 'platinum') {
+                if (['bronze', 'silver', 'gold', 'platinum'].includes(league)) {
                     await claimLeague('Bronze', getSquadRatingsBronze);
                 }
 
-                if (league === 'silver' || league === 'gold' || league === 'platinum') {
+                if (['silver', 'gold', 'platinum'].includes(league)) {
                     await claimLeague('Silver', checkLeagueBonusSilver);
                 }
 
-                if (league === 'gold' || league === 'platinum') {
+                if (['gold', 'platinum'].includes(league)) {
                     await claimLeague('Gold', checkLeagueBonusGold);
                 }
 
@@ -652,8 +654,8 @@ const claimLeagueRewards = async () => {
                         rewardsClaimed = true;
                     }
                 } catch (error) {
-                    if (error.response && [400].includes(error.response.status)) {
-                        console.log(`❌ ${firstName} had a problem while claiming points for painting the world 20 times. Please try again later.`.red);
+                    if (error.response && error.response.status === 400) {
+                        console.log(`❌ ${firstName} has already claimed points for painting the world 20 times or needs to do it manually.`.red);
                     } else {
                         console.log(`❌ ${firstName} had a problem while claiming points for painting the world 20 times. Please try again later.`.red);
                     }
@@ -669,8 +671,8 @@ const claimLeagueRewards = async () => {
                         rewardsClaimed = true;
                     }
                 } catch (error) {
-                    if (error.response && [400].includes(error.response.status)) {
-                        console.log(`❌ ${firstName} had a problem while claiming points for the "Make Pixel Avatar" task. Please try again later.`.red);
+                    if (error.response && error.response.status === 400) {
+                        console.log(`❌ ${firstName} has already claimed points for the "Make Pixel Avatar" task or needs to do it manually.`.red);
                     } else {
                         console.log(`❌ ${firstName} had a problem while claiming points for the "Make Pixel Avatar" task. Please try again later.`.red);
                     }
@@ -682,6 +684,7 @@ const claimLeagueRewards = async () => {
 
             } catch (error) {
                 console.log(`❌ Error processing account ID ${id}.`.red);
+                console.log('');
             }
 
             // Wait 500ms between requests
@@ -689,6 +692,91 @@ const claimLeagueRewards = async () => {
         };
 
         await performActionWithRetry(actionFunction, i);
+    }
+};
+
+// Option 5: Auto Complete Tasks
+const autoCompleteTasks = async () => {
+    console.log('\n⚙️  Auto Completing Tasks for all Users'.yellow + '\n');
+
+    for (let i = 0; i < accountsData.length; i++) {
+        let accountData = accountsData[i];
+        const { id, queryId, proxy, userAgent } = accountData;
+        if (!queryId) {
+            console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
+            console.log('');
+            continue;
+        }
+
+        const actionFunction = async () => {
+            try {
+                const userInfo = await getUserInfo(queryId, proxy, userAgent);
+                const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
+
+                // Complete Boink Task
+                try {
+                    const boinkResponse = await completeBoinkTask(queryId, proxy, userAgent);
+                    if (boinkResponse.boinkTask === true) {
+                        console.log(`✅ ${firstName} has completed Boink Task.`.green);
+                    } else {
+                        console.log(`🟠 Boink Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                    }
+                } catch (error) {
+                    if (error.response && error.response.status === 400) {
+                        console.log(`🟠 Boink Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                    } else {
+                        console.log(`⛔️ Error completing Boink Task for ${firstName}.`.red);
+                    }
+                }
+
+                // Wait 2 seconds between tasks
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Complete Jetton Task
+                try {
+                    const jettonResponse = await completeJettonTask(queryId, proxy, userAgent);
+                    if (jettonResponse.jettonTask === true) {
+                        console.log(`✅ ${firstName} has completed Jetton Task.`.green);
+                    } else {
+                        console.log(`🟠 Jetton Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                    }
+                } catch (error) {
+                    if (error.response && error.response.status === 400) {
+                        console.log(`🟠 Jetton Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                    } else {
+                        console.log(`⛔️ Error completing Jetton Task for ${firstName}.`.red);
+                    }
+                }
+
+                // Wait 2 seconds between tasks
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Complete Pixel in Nickname Task
+                try {
+                    const pixelInNameResponse = await completePixelInNameTask(queryId, proxy, userAgent);
+                    if (pixelInNameResponse.pixelInNickname === true) {
+                        console.log(`✅ ${firstName} has completed Pixel in Nickname Task.`.green);
+                    } else {
+                        console.log(`🟠 Pixel in Nickname Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                    }
+                } catch (error) {
+                    if (error.response && error.response.status === 400) {
+                        console.log(`🟠 Pixel in Nickname Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                    } else {
+                        console.log(`⛔️ Error completing Pixel in Nickname Task for ${firstName}.`.red);
+                    }
+                }
+
+            } catch (error) {
+                console.log(`⛔️ Error completing tasks for account ID ${id}.`.red);
+                throw error;
+            }
+        };
+
+        await performActionWithRetry(actionFunction, i);
+
+        // Wait 1 second before moving to the next account
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
 };
 
@@ -702,8 +790,9 @@ const main = async () => {
     console.log('🎨 1. Paint the World'.green);
     console.log('🪙  2. Claim Mining Rewards'.green);
     console.log('🔗 3. Improve Account'.green);
-    console.log('🏆 4. Claim Rewards for Leagues'.green); // New option
-    console.log('✖️  5. Exit'.green); // Updated exit option
+    console.log('🏆 4. Claim Rewards for Leagues'.green);
+    console.log('⚙️  5. Auto Complete Tasks'.green);
+    console.log('✖️  6. Exit'.green);
 
     const choice = askQuestion('Enter the option number: ');
 
@@ -721,11 +810,15 @@ const main = async () => {
             await claimLeagueRewards();
             break;
         case '5':
+            await autoCompleteTasks();
+            break;
+        case '6':
             console.log('Exiting...'.green);
             process.exit(0);
             break;
         default:
             console.log('Invalid option. Please try again.'.red);
+            console.log('');
             await pause();
             break;
     }

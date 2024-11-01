@@ -182,7 +182,7 @@ async function loginWithSessionFile(account) {
     try {
         const client = new TelegramClient(new StringSession(sessionData), Number(api_id), api_hash, { connectionRetries: 5 });
         await client.connect();
-        console.log(`Logged in using the session file for account ID: ${id}`);
+        console.log(colors.green(`Logged in using the session file for account ID: ${id}`));
         accounts.set(phone_number, client);
     } catch (error) {
         console.error(`Error logging in using the session file for account ID ${id}:`, error.message);
@@ -202,7 +202,7 @@ async function loadAllAccounts() {
 // Function to request WebView and obtain the tgWebAppData
 async function requestWebViewForClient(client, phoneNumber, accountId) {
     const botPeer = '@notpx_bot';
-    const url = 'https://t.me/notpixel/app?startapp=f7274608889_s573790';
+    const url = 'https://app.notpx.app/';
 
     try {
         const result = await client.invoke(
@@ -225,16 +225,16 @@ async function requestWebViewForClient(client, phoneNumber, accountId) {
         const tgWebAppData = params.get('tgWebAppData');
 
         if (!tgWebAppData) {
-            console.error(`Could not extract tgWebAppData for account ${phoneNumber}`);
+            console.error(colors.red(`⛔️ Could not extract tgWebAppData for account ID ${accountId}`));
             return null;
         }
 
-        // tgWebAppData is URL-encoded, keep it that way
-        console.log(`Extracted tgWebAppData for account ${phoneNumber}: ${tgWebAppData}`);
+        // tgWebAppData is URL-encoded, keep it as is
+        console.log(colors.green(`✅ Extracted tgWebAppData for account ID ${accountId}: ${tgWebAppData}`));
 
         return tgWebAppData;
     } catch (error) {
-        console.error(`Error requesting WebView for account ID ${accountId}:`, error.message);
+        console.error(colors.red(`⛔️ Error requesting WebView for account ID ${accountId}: ${error.message}`));
         return null;
     }
 }

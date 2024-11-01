@@ -33,7 +33,9 @@ const {
     checkMakePixelAvatar, // Importar la nueva función
     completeBoinkTask,
     completeJettonTask,
-    completePixelInNameTask
+    completePixelInNameTask,
+    claimHalloweenGift,
+    specialRepaint
 } = require('./scripts/apis');
 
 // Import promise-limit for concurrency control
@@ -416,31 +418,80 @@ async function performActionWithRetry(actionFunction, dataIndex) {
 const paintTheWorld = async () => {
     console.log('\n🔄 '.blue + "Let's Paint the World with all your Users".blue + '\n');
 
+    // Mostrar el sub-menú
+    console.log('How would you like to paint?'.yellow);
+    console.log('1. Normal Workflow'.green);
+    console.log('2. Using Items'.green);
+    const paintChoice = askQuestion('Enter the number of your choice: ');
+
+    let useItems = false;
+
+    switch (paintChoice) {
+        case '1':
+            useItems = false;
+            break;
+        case '2':
+            useItems = true;
+            break;
+        default:
+            console.log('Invalid option. Returning to main menu.'.red);
+            return;
+    }
+
+    // Etiqueta para salir de ambos bucles en caso de error
+    outerLoop:
     for (let i = 0; i < accountsData.length; i++) {
         let accountData = accountsData[i];
         const { id, queryId, proxy, userAgent } = accountData;
+
         if (!queryId) {
             console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
             console.log('');
             continue;
         }
 
-        const actionFunction = async () => {
-            try {
-                const userInfo = await getUserInfo(queryId, proxy, userAgent);
-                const miningStatus = await getMiningStatus(queryId, proxy, userAgent);
+        try {
+            const userInfo = await getUserInfo(queryId, proxy, userAgent);
+            const miningStatus = await getMiningStatus(queryId, proxy, userAgent);
 
-                const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
-                const charges = miningStatus.charges;
+            const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
+            const charges = miningStatus.charges;
 
-                if (charges === 0) {
-                    console.log(`\n🔴 ${firstName} cannot paint now. Wait 10 minutes for the next painting.`.red);
-                    return;
-                }
+            if (charges === 0) {
+                console.log(`\n🔴 ${firstName} cannot paint now. Wait 10 minutes for the next painting.`.red);
+                continue;
+            }
 
-                console.log(`\n🎨 Painting with ${firstName} - Please wait while creating art...`.yellow);
+            console.log(`\n🎨 Painting with ${firstName} - Please wait while creating art...`.yellow);
 
-                for (let j = 0; j < charges; j++) {
+            for (let j = 0; j < charges; j++) {
+                if (useItems) {
+                    // Realizar hasta 6 solicitudes de specialRepaint con pixelId aleatorio y type 7
+                    for (let k = 0; k < 6; k++) {
+                        const pixelId = getRandomPixelId();
+                        const type = 7;
+
+                        try {
+                            const repaintResponse = await specialRepaint(queryId, proxy, userAgent, pixelId, type);
+
+                            // Si la solicitud es exitosa (código 200)
+                            console.log(`✅ ${firstName} Bombarded PixelID ${pixelId}.`.green);
+                        } catch (error) {
+                            if (error.response && error.response.status === 400) {
+                                console.log(`${firstName} doesn't own items right now. Please buy or earn more to make Special Repaints`.red);
+                                // Saltar a la siguiente cuenta
+                                continue outerLoop;
+                            } else {
+                                console.log(`⛔️ ${firstName} doesn't own items right now. Please buy or earn more to make Special Repaints`.red);
+                                continue outerLoop;
+                            }
+                        }
+
+                        // Esperar 500ms entre solicitudes para evitar sobrecarga
+                        await new Promise(res => setTimeout(res, 500));
+                    }
+                } else {
+                    // Flujo normal sin usar ítems
                     const newColor = getRandomColor();
                     const pixelId = getRandomPixelId();
 
@@ -456,16 +507,16 @@ const paintTheWorld = async () => {
                         console.log(`⛔️ ${firstName} could not paint pixel ${pixelId}.`.red);
                     }
 
-                    // Wait 500ms between requests
+                    // Esperar 500ms entre solicitudes
                     await new Promise(res => setTimeout(res, 500));
                 }
-
-            } catch (error) {
-                console.log(`⛔️ Error processing account ID ${id}.`.red);
             }
-        };
 
-        await performActionWithRetry(actionFunction, i);
+        } catch (error) {
+            console.log(`⛔️ Error processing account ID ${id}.`.red);
+            // Continuar con la siguiente cuenta en caso de error inesperado
+            continue;
+        }
     }
 };
 
@@ -587,7 +638,7 @@ const improveAccount = async () => {
 
 // Option 4: Claim Rewards for Leagues
 const claimLeagueRewards = async () => {
-    console.log('\n🏆 '.yellow + "Claiming League Rewards for all Users".yellow + '\n');
+    console.log('\n🏆 '.yellow + "Claiming League Rewards and Halloween Gifts for all Users".yellow + '\n');
 
     for (let i = 0; i < accountsData.length; i++) {
         let accountData = accountsData[i];
@@ -605,7 +656,7 @@ const claimLeagueRewards = async () => {
 
                 let rewardsClaimed = false;
 
-                // Function to claim reward for a specific league
+                // Función para reclamar recompensa de una liga específica
                 const claimLeague = async (leagueName, claimFunction) => {
                     try {
                         const response = await claimFunction(queryId, proxy, userAgent);
@@ -624,7 +675,7 @@ const claimLeagueRewards = async () => {
                     }
                 };
 
-                // Claim rewards based on the user's league
+                // Reclamar recompensas según la liga del usuario
                 if (['bronze', 'silver', 'gold', 'platinum'].includes(league)) {
                     await claimLeague('Bronze', getSquadRatingsBronze);
                 }
@@ -641,7 +692,7 @@ const claimLeagueRewards = async () => {
                     await claimLeague('Platinum', checkLeagueBonusPlatinum);
                 }
 
-                // Claim points for painting 20 pixels
+                // Reclamar puntos por pintar 20 píxeles
                 try {
                     const paintResponse = await checkPaint20Pixels(queryId, proxy, userAgent);
                     if (paintResponse.paint20pixels === true) {
@@ -658,7 +709,7 @@ const claimLeagueRewards = async () => {
                     }
                 }
 
-                // Claim points for "Make Pixel Avatar" task
+                // Reclamar puntos por la tarea "Make Pixel Avatar"
                 try {
                     const avatarResponse = await checkMakePixelAvatar(queryId, proxy, userAgent);
                     if (avatarResponse.makePixelAvatar === true) {
@@ -675,15 +726,26 @@ const claimLeagueRewards = async () => {
                     }
                 }
 
+                // Reclamar el regalo de Halloween
+                try {
+                    const halloweenResponse = await claimHalloweenGift(queryId, proxy, userAgent);
+                    if (halloweenResponse.pumpkin === true) {
+                        console.log(`✅ ${firstName} has claimed 6 Bombs as Halloween Gift.`.green);
+                        rewardsClaimed = true;
+                    }
+                } catch (error) {
+                    console.log(`❌ Could not claim Halloween Gift for ${firstName}.`.red);
+                }
+
                 if (!rewardsClaimed) {
-                    console.log(`ℹ️ ${firstName} has no pending league rewards to claim.`.cyan);
+                    console.log(`ℹ️ ${firstName} has no pending rewards to claim.`.cyan);
                 }
 
             } catch (error) {
                 console.log(`❌ Error processing account ID ${id}.`.red);
             }
 
-            // Wait 500ms between requests
+            // Esperar 500ms entre solicitudes
             await new Promise(res => setTimeout(res, 500));
         };
 

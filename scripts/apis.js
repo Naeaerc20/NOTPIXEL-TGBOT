@@ -357,6 +357,43 @@ const completePixelInNameTask = async (queryId, proxy, userAgent) => {
     }
 };
 
+const claimHalloweenGift = async (queryId, proxy, userAgent) => {
+    const axiosInstance = createAxiosInstance(proxy, userAgent);
+    try {
+        const response = await axiosInstance.get(`${BASE_URL}/mining/task/check/pumpkin`, {
+            headers: {
+                authorization: `initData ${queryId}`
+            }
+        });
+        return response.data
+    } catch (error) {
+        throw error;
+    }
+};
+
+const specialRepaint = async (queryId, proxy, userAgent, pixelId, type) => {
+    const axiosInstance = createAxiosInstance(proxy, userAgent);
+    const payload = {
+        pixelId,
+        type
+    };
+    const config = {
+        headers: {
+            authorization: `initData ${queryId}`
+        }
+    };
+    try {
+        const response = await axiosInstance.post(`${BASE_URL}/repaint/special`, payload, config);
+        return response.data;
+    } catch (error) {
+        if (error.response) {
+            throw { response: { status: error.response.status } };
+        } else {
+            throw error;
+        }
+    }
+};
+
 module.exports = {
     getUserInfo,
     getMiningStatus,
@@ -378,5 +415,7 @@ module.exports = {
     checkMakePixelAvatar,
     completeBoinkTask,
     completeJettonTask,
-    completePixelInNameTask
+    completePixelInNameTask,
+    claimHalloweenGift,
+    specialRepaint
 };

@@ -145,13 +145,13 @@ async function loginWithPhoneNumber(account) {
     accounts.set(phone_number, client);
 }
 
-// Function to log in with a session file or phone number
+// Function to log in with session file or phone number
 async function loginWithSessionFile(account) {
     const { id, api_id, api_hash, phone_number } = account;
     const sessionFile = path.join(sessionsFolder, `${id}_session`);
 
     if (!fs.existsSync(sessionFile)) {
-        console.log(`Session file for account ID ${id} not found.\n`);
+        console.log(`Session file for account ID ${id} not found.`);
         await loginWithPhoneNumber(account);
         return;
     }
@@ -159,7 +159,7 @@ async function loginWithSessionFile(account) {
     const sessionData = fs.readFileSync(sessionFile, 'utf-8');
 
     if (!sessionData || sessionData.trim() === '') {
-        console.log(`The session file for account ID ${id} is empty or invalid.\n`);
+        console.log(`The session file for account ID ${id} is empty or invalid.`);
         await loginWithPhoneNumber(account);
         return;
     }
@@ -167,18 +167,17 @@ async function loginWithSessionFile(account) {
     try {
         const client = new TelegramClient(new StringSession(sessionData), Number(api_id), api_hash, { connectionRetries: 5 });
         await client.connect();
-        console.log(`Logged in using the session file for account ID: ${id}\n`);
+        console.log(colors.green(`Logged in using the session file for account ID: ${id}`));
         accounts.set(phone_number, client);
     } catch (error) {
-        console.error(`Error logging in using the session file for account ID ${id}:`, error.message, '\n');
+        console.error(`Error logging in using the session file for account ID ${id}:`, error.message);
         await loginWithPhoneNumber(account);
     }
 }
 
-// Function to request WebView and obtain the tgWebAppData
 async function requestWebViewForClient(client, phoneNumber, accountId) {
     const botPeer = '@notpx_bot';
-    const url = 'https://app.notpx.app';
+    const url = 'https://app.notpx.app/';
 
     try {
         const result = await client.invoke(
@@ -201,16 +200,16 @@ async function requestWebViewForClient(client, phoneNumber, accountId) {
         const tgWebAppData = params.get('tgWebAppData');
 
         if (!tgWebAppData) {
-            console.error(`Could not extract tgWebAppData for account ${phoneNumber}\n`);
+            console.error(colors.red(`⛔️ Could not extract tgWebAppData for account ID ${accountId}`));
             return null;
         }
 
-        // tgWebAppData is URL-encoded, keep it that way
-        console.log(`🔑 Extracted tgWebAppData for account ${phoneNumber}: ${tgWebAppData}\n`);
+        // tgWebAppData is URL-encoded, keep it as is
+        console.log(colors.green(`✅ Extracted tgWebAppData for account ID ${accountId}: ${tgWebAppData}`));
 
         return tgWebAppData;
     } catch (error) {
-        console.error(`Error requesting WebView for account ID ${accountId}:`, error.message.red, '\n');
+        console.error(colors.red(`⛔️ Error requesting WebView for account ID ${accountId}: ${error.message}`));
         return null;
     }
 }
@@ -376,7 +375,6 @@ const displayAccountsTable = async () => {
     });
 
     console.log(table.toString());
-    console.log('');
 };
 
 // Function to pause execution until the user presses Enter
@@ -480,7 +478,6 @@ const claimRewards = async () => {
         const { id, queryId, proxy, userAgent } = accountData;
         if (!queryId) {
             console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
-            console.log('');
             continue;
         }
 
@@ -492,9 +489,9 @@ const claimRewards = async () => {
                 const claimResponse = await claimMiningRewards(queryId, proxy, userAgent);
                 const claimed = claimResponse.claimed;
 
-                console.log(`\n🎉 ${firstName} has successfully claimed ${claimed} in Mining Rewards.`.magenta);
+                console.log(`🎉 ${firstName} has successfully claimed ${claimed} in Mining Rewards.\n`.magenta);
             } catch (error) {
-                console.log(`⛔️ Could not claim rewards for account ID ${id}.`.red);
+                console.log(`⛔️ Could not claim rewards for account ID ${id}.\n`.red);
             }
 
             // Wait 500ms between requests
@@ -547,7 +544,7 @@ const improveAccount = async () => {
                 const userInfo = await getUserInfo(queryId, proxy, userAgent);
                 const firstName = userInfo.firstName ? userInfo.firstName.split(' ')[0] : 'N/A';
 
-                console.log(`\n⚙️  Improving ${improvementFunction} for ${firstName}.`.blue);
+                console.log(`\n⚙️  Improving ${improvementFunction} for ${firstName}.\n`.blue);
 
                 let improveResponse;
                 switch (improvementFunction) {
@@ -556,7 +553,7 @@ const improveAccount = async () => {
                         if (improveResponse.paintReward === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
-                            console.log(`⛔️ ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.red);
+                            console.log(`🔵 ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.blue);
                         }
                         break;
                     case 'Recharge Speed':
@@ -564,7 +561,7 @@ const improveAccount = async () => {
                         if (improveResponse.reChargeSpeed === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
-                            console.log(`⛔️ ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.red);
+                            console.log(`🔵 ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.blue);
                         }
                         break;
                     case 'Energy Limit':
@@ -572,7 +569,7 @@ const improveAccount = async () => {
                         if (improveResponse.energyLimit === true) {
                             console.log(`✅ ${firstName} has successfully improved ${improvementFunction}.`.green);
                         } else {
-                            console.log(`⛔️ ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.red);
+                            console.log(`🔵 ${firstName} has already maximized ${improvementFunction} and cannot improve it further.`.blue);
                         }
                         break;
                     default:
@@ -684,7 +681,6 @@ const claimLeagueRewards = async () => {
 
             } catch (error) {
                 console.log(`❌ Error processing account ID ${id}.`.red);
-                console.log('');
             }
 
             // Wait 500ms between requests
@@ -704,7 +700,6 @@ const autoCompleteTasks = async () => {
         const { id, queryId, proxy, userAgent } = accountData;
         if (!queryId) {
             console.log(`\n⛔️ Account ID ${id} does not have valid tgWebAppData.`.red);
-            console.log('');
             continue;
         }
 
@@ -717,15 +712,15 @@ const autoCompleteTasks = async () => {
                 try {
                     const boinkResponse = await completeBoinkTask(queryId, proxy, userAgent);
                     if (boinkResponse.boinkTask === true) {
-                        console.log(`✅ ${firstName} has completed Boink Task.`.green);
+                        console.log(`✅ ${firstName} has completed Boink Task.\n`.green);
                     } else {
-                        console.log(`🟠 Boink Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                        console.log(`🟠 Boink Task is already completed for ${firstName} or needs to be completed manually.\n`.red);
                     }
                 } catch (error) {
                     if (error.response && error.response.status === 400) {
-                        console.log(`🟠 Boink Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                        console.log(`🟠 Boink Task is already completed for ${firstName} or needs to be completed manually.\n`.red);
                     } else {
-                        console.log(`⛔️ Error completing Boink Task for ${firstName}.`.red);
+                        console.log(`⛔️ Error completing Boink Task for ${firstName}.\n`.red);
                     }
                 }
 
@@ -736,15 +731,15 @@ const autoCompleteTasks = async () => {
                 try {
                     const jettonResponse = await completeJettonTask(queryId, proxy, userAgent);
                     if (jettonResponse.jettonTask === true) {
-                        console.log(`✅ ${firstName} has completed Jetton Task.`.green);
+                        console.log(`✅ ${firstName} has completed Jetton Task.\n`.green);
                     } else {
-                        console.log(`🟠 Jetton Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                        console.log(`🟠 Jetton Task is already completed for ${firstName} or needs to be completed manually.\n`.red);
                     }
                 } catch (error) {
                     if (error.response && error.response.status === 400) {
-                        console.log(`🟠 Jetton Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                        console.log(`🟠 Jetton Task is already completed for ${firstName} or needs to be completed manually.\n`.red);
                     } else {
-                        console.log(`⛔️ Error completing Jetton Task for ${firstName}.`.red);
+                        console.log(`⛔️ Error completing Jetton Task for ${firstName}.\n`.red);
                     }
                 }
 
@@ -755,20 +750,20 @@ const autoCompleteTasks = async () => {
                 try {
                     const pixelInNameResponse = await completePixelInNameTask(queryId, proxy, userAgent);
                     if (pixelInNameResponse.pixelInNickname === true) {
-                        console.log(`✅ ${firstName} has completed Pixel in Nickname Task.`.green);
+                        console.log(`✅ ${firstName} has completed Pixel in Nickname Task.\n`.green);
                     } else {
-                        console.log(`🟠 Pixel in Nickname Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                        console.log(`🟠 Pixel in Nickname Task is already completed for ${firstName} or needs to be completed manually.\n`.red);
                     }
                 } catch (error) {
                     if (error.response && error.response.status === 400) {
-                        console.log(`🟠 Pixel in Nickname Task is already completed for ${firstName} or needs to be completed manually.`.red);
+                        console.log(`🟠 Pixel in Nickname Task is already completed for ${firstName} or needs to be completed manually.\n`.red);
                     } else {
-                        console.log(`⛔️ Error completing Pixel in Nickname Task for ${firstName}.`.red);
+                        console.log(`⛔️ Error completing Pixel in Nickname Task for ${firstName}.\n`.red);
                     }
                 }
 
             } catch (error) {
-                console.log(`⛔️ Error completing tasks for account ID ${id}.`.red);
+                console.log(`⛔️ Error completing tasks for account ID ${id}.\n`.red);
                 throw error;
             }
         };
